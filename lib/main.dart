@@ -1,15 +1,23 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'driver_page.dart';
+import 'passenger_page.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp();
- await FirebaseAuth.instance.signInAnonymously();
+
+  if (FirebaseAuth.instance.currentUser == null) {
+    await FirebaseAuth.instance.signInAnonymously();
+  }
+
   runApp(const TianRideApp());
 }
 
@@ -39,31 +47,90 @@ class ModePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("TianRide")),
+      appBar: AppBar(
+        title: const Text('TianRide'),
+      ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.local_taxi, size: 80, color: Colors.greenAccent),
-            const SizedBox(height: 20),
-            const Text("Pilih Mode", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HomePage())),
-              child: const Text("PENUMPANG"),
-            ),
-            const SizedBox(height: 15),
-            ElevatedButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HomePage())),
-              child: const Text("DRIVER"),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.local_taxi,
+                size: 90,
+                color: Colors.greenAccent,
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'TianRide',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Pilih mode',
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PassengerPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.person),
+                  label: const Text(
+                    'PENUMPANG',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DriverPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.local_taxi),
+                  label: const Text(
+                    'DRIVER',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 25),
+              const Text(
+                'Firebase aktif',
+                style: TextStyle(
+                  color: Colors.greenAccent,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// Halaman peta dan GPS lama TianRide.
+/// Kita pertahankan sebagai fondasi untuk fitur lokasi berikutnya.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -76,7 +143,9 @@ class _HomePageState extends State<HomePage> {
 
   LatLng? _currentLocation;
   bool _loading = false;
-  String _status = 'Tekan tombol lokasi untuk mencari posisi Anda';
+
+  String _status =
+      'Tekan tombol lokasi untuk mencari posisi Anda';
 
   Future<void> _getLocation() async {
     setState(() {
@@ -85,20 +154,24 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled =
+          await Geolocator.isLocationServiceEnabled();
 
       if (!serviceEnabled) {
         setState(() {
-          _status = 'GPS belum aktif. Aktifkan lokasi di HP.';
+          _status =
+              'GPS belum aktif. Aktifkan lokasi di HP.';
           _loading = false;
         });
         return;
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      LocationPermission permission =
+          await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission =
+            await Geolocator.requestPermission();
       }
 
       if (permission == LocationPermission.denied) {
@@ -109,16 +182,20 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      if (permission == LocationPermission.deniedForever) {
+      if (permission ==
+          LocationPermission.deniedForever) {
         setState(() {
-          _status = 'Izin lokasi ditolak permanen. Buka pengaturan aplikasi.';
+          _status =
+              'Izin lokasi ditolak permanen. Buka pengaturan aplikasi.';
           _loading = false;
         });
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
+      final position =
+          await Geolocator.getCurrentPosition(
+        locationSettings:
+            const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
@@ -131,7 +208,8 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _currentLocation = location;
         _status =
-            'Lokasi ditemukan\n${position.latitude.toStringAsFixed(6)}, '
+            'Lokasi ditemukan\n'
+            '${position.latitude.toStringAsFixed(6)}, '
             '${position.longitude.toStringAsFixed(6)}';
         _loading = false;
       });
@@ -139,7 +217,8 @@ class _HomePageState extends State<HomePage> {
       _mapController.move(location, 16);
     } catch (e) {
       setState(() {
-        _status = 'Gagal mendapatkan lokasi: $e';
+        _status =
+            'Gagal mendapatkan lokasi: $e';
         _loading = false;
       });
     }
@@ -147,18 +226,23 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final location = _currentLocation ?? const LatLng(-1.6101, 103.6131);
+    final location =
+        _currentLocation ??
+        const LatLng(-1.6101, 103.6131);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'TianRide',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         actions: [
           IconButton(
             tooltip: 'Lokasi saya',
-            onPressed: _loading ? null : _getLocation,
+            onPressed:
+                _loading ? null : _getLocation,
             icon: const Icon(Icons.my_location),
           ),
         ],
@@ -175,7 +259,8 @@ class _HomePageState extends State<HomePage> {
               TileLayer(
                 urlTemplate:
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.tianride',
+                userAgentPackageName:
+                    'com.example.tianride',
               ),
               if (_currentLocation != null)
                 MarkerLayer(
@@ -194,7 +279,6 @@ class _HomePageState extends State<HomePage> {
                 ),
             ],
           ),
-
           Positioned(
             left: 16,
             right: 16,
@@ -204,20 +288,23 @@ class _HomePageState extends State<HomePage> {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize:
+                      MainAxisSize.min,
                   children: [
                     const Row(
                       children: [
                         Icon(
                           Icons.local_taxi,
-                          color: Colors.greenAccent,
+                          color:
+                              Colors.greenAccent,
                         ),
                         SizedBox(width: 10),
                         Text(
                           'TianRide Online',
                           style: TextStyle(
                             fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontWeight:
+                                FontWeight.bold,
                           ),
                         ),
                       ],
@@ -225,22 +312,29 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 10),
                     Text(
                       _status,
-                      textAlign: TextAlign.center,
+                      textAlign:
+                          TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _loading ? null : _getLocation,
+                      child:
+                          ElevatedButton.icon(
+                        onPressed: _loading
+                            ? null
+                            : _getLocation,
                         icon: _loading
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(
+                                child:
+                                    CircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.my_location),
+                            : const Icon(
+                                Icons.my_location,
+                              ),
                         label: Text(
                           _loading
                               ? 'Mencari lokasi...'
