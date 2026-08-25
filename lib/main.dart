@@ -1,18 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
-import 'passenger_page.dart';
 import 'driver_page.dart';
+import 'passenger_page.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await Firebase.initializeApp();
 
   if (FirebaseAuth.instance.currentUser == null) {
     await FirebaseAuth.instance.signInAnonymously();
   }
+
+  try {
+    await NotificationService.initialize();
+  } catch (_) {}
 
   runApp(const TianRideApp());
 }
@@ -40,6 +45,20 @@ class TianRideApp extends StatelessWidget {
 class ModePage extends StatelessWidget {
   const ModePage({super.key});
 
+  Future<void> _openPassenger(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PassengerPage()),
+    );
+  }
+
+  Future<void> _openDriver(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DriverPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -50,17 +69,16 @@ class ModePage extends StatelessWidget {
         ),
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(
                 Icons.local_taxi,
                 size: 90,
                 color: Colors.greenAccent,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
                 'TianRide',
                 style: TextStyle(
@@ -69,46 +87,37 @@ class ModePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text('Transportasi online'),
+              const Text('Transportasi online masa uji coba'),
               const SizedBox(height: 35),
               SizedBox(
                 width: double.infinity,
-                height: 55,
+                height: 58,
                 child: ElevatedButton.icon(
+                  onPressed: () => _openPassenger(context),
                   icon: const Icon(Icons.person),
                   label: const Text(
                     'PENUMPANG',
                     style: TextStyle(fontSize: 18),
                   ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PassengerPage(),
-                      ),
-                    );
-                  },
                 ),
               ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
-                height: 55,
+                height: 58,
                 child: ElevatedButton.icon(
+                  onPressed: () => _openDriver(context),
                   icon: const Icon(Icons.local_taxi),
                   label: const Text(
                     'DRIVER',
                     style: TextStyle(fontSize: 18),
                   ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DriverPage(),
-                      ),
-                    );
-                  },
                 ),
+              ),
+              const SizedBox(height: 25),
+              const Text(
+                'Firebase aktif • 2 HP realtime',
+                style: TextStyle(color: Colors.greenAccent),
               ),
             ],
           ),

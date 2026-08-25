@@ -48,3 +48,6 @@ app.*.map.json
 .widget_preview/
 
 lib/main_backup.dart
+
+lib_backup_lengkap/
+lib/*_sebelum_final.dart
