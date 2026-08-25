@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "960158065390",
+    "project_id": "tianride-8a73e",
+    "storage_bucket": "tianride-8a73e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960158065390:android:86b1b163c7c23f97fa09ff",
+        "android_client_info": {
+          "package_name": "com.example.tianride"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqINjc_M_NOTo-jWUNomO5IgkZL1fxFGM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
