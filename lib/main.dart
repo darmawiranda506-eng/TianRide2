@@ -25,7 +25,38 @@ class TianRideApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: const ModePage(),
+    );
+  }
+}
+
+class ModePage extends StatelessWidget {
+  const ModePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("TianRide")),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.local_taxi, size: 80, color: Colors.greenAccent),
+            const SizedBox(height: 20),
+            const Text("Pilih Mode", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 30),
+            ElevatedButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HomePage())),
+              child: const Text("PENUMPANG"),
+            ),
+            const SizedBox(height: 15),
+            ElevatedButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HomePage())),
+              child: const Text("DRIVER"),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
