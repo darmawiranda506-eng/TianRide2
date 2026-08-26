@@ -23,6 +23,63 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960158065390:android:9816cb2c170fb9f6fa09ff",
+        "android_client_info": {
+          "package_name": "com.example.tianride.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqINjc_M_NOTo-jWUNomO5IgkZL1fxFGM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960158065390:android:f72a7c31af0bf377fa09ff",
+        "android_client_info": {
+          "package_name": "com.example.tianride.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqINjc_M_NOTo-jWUNomO5IgkZL1fxFGM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960158065390:android:31c5168a7b903843fa09ff",
+        "android_client_info": {
+          "package_name": "com.example.tianride.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqINjc_M_NOTo-jWUNomO5IgkZL1fxFGM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
