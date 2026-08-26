@@ -9,6 +9,28 @@ android {
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
+    flavorDimensions += "role"
+
+    productFlavors {
+        create("customer") {
+            dimension = "role"
+            applicationIdSuffix = ".customer"
+            versionNameSuffix = "-customer"
+        }
+
+        create("driver") {
+            dimension = "role"
+            applicationIdSuffix = ".driver"
+            versionNameSuffix = "-driver"
+        }
+
+        create("admin") {
+            dimension = "role"
+            applicationIdSuffix = ".admin"
+            versionNameSuffix = "-admin"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
