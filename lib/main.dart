@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'admin_page.dart';
-import 'driver_page.dart';
+import 'driver_login_page.dart';
 import 'passenger_page.dart';
 import 'services/notification_service.dart';
 
@@ -50,7 +50,7 @@ class TianRideApp extends StatelessWidget {
   Widget _homePage() {
     switch (appFlavor) {
       case 'driver':
-        return const DriverPage();
+        return const DriverLoginPage();
 
       case 'admin':
         return const AdminPage();
