@@ -210,7 +210,7 @@ class _DriverLoginPageState extends State<DriverLoginPage> {
               ),
               const SizedBox(height: 25),
               const Text(
-                'TianRide DWS • Mitra Driver',
+                'Darma Ride DWS • Mitra Driver',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.greenAccent,

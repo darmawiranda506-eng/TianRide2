@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'services/notification_service.dart';
 
 class DriverPage extends StatefulWidget {
   const DriverPage({super.key});
@@ -18,15 +19,17 @@ class _DriverPageState extends State<DriverPage> {
   bool _online = false;
   bool _loading = false;
 
+  final Set<String> _notifiedOrderIds = <String>{};
+
   String? _activeOrderId;
-  String _driverName = 'Driver TianRide';
-  String _vehicle = 'Motor • TianRide';
+  String _driverName = 'Driver Darma Ride';
+  String _vehicle = 'Motor • Darma Ride';
 
   final TextEditingController _nameController =
-      TextEditingController(text: 'Driver TianRide');
+      TextEditingController(text: 'Driver Darma Ride');
 
   final TextEditingController _vehicleController =
-      TextEditingController(text: 'Motor • TianRide');
+      TextEditingController(text: 'Motor • Darma Ride');
 
   final CollectionReference<Map<String, dynamic>> _orders =
       FirebaseFirestore.instance.collection('orders');
@@ -75,11 +78,11 @@ class _DriverPageState extends State<DriverPage> {
       );
 
       _driverName = _nameController.text.trim().isEmpty
-          ? 'Driver TianRide'
+          ? 'Driver Darma Ride'
           : _nameController.text.trim();
 
       _vehicle = _vehicleController.text.trim().isEmpty
-          ? 'Motor • TianRide'
+          ? 'Motor • Darma Ride'
           : _vehicleController.text.trim();
 
       await _orders.doc('_drivers_$_uid').set({
@@ -399,6 +402,27 @@ class _DriverPageState extends State<DriverPage> {
 
         final docs = snapshot.data?.docs ?? [];
 
+        for (final doc in docs) {
+          if (!_notifiedOrderIds.contains(doc.id)) {
+            final data = doc.data();
+
+            _notifiedOrderIds.add(doc.id);
+
+            final distance =
+                (data['distanceKm'] ?? 0).toDouble();
+            final fare =
+                (data['fare'] ?? 0).toDouble();
+
+            NotificationService.showOrderNotification(
+              title: 'ORDER BARU',
+              body:
+                  '${distance.toStringAsFixed(1)} km • '
+                  'Rp ${fare.toStringAsFixed(0)} • '
+                  'Pembayaran TUNAI',
+            );
+          }
+        }
+
         if (docs.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(20),
@@ -518,7 +542,7 @@ class _DriverPageState extends State<DriverPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('TianRide Driver'),
+        title: const Text('Darma Ride Driver'),
         actions: [
           IconButton(
             onPressed: _online ? _goOffline : () => _goOnline(),

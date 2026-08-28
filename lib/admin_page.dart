@@ -11,7 +11,7 @@ class AdminPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('TianRide Admin'),
+        title: const Text('Darma Ride Admin'),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: orders

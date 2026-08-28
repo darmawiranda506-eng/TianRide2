@@ -254,7 +254,7 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
             content: Text(
               'ID Driver Anda:\n\n'
               '$driverId\n\n'
-              'Akun Anda sedang menunggu verifikasi Admin TianRide.',
+              'Akun Anda sedang menunggu verifikasi Admin Darma Ride.',
             ),
             actions: [
               TextButton(

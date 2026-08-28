@@ -25,17 +25,17 @@ Future<void> main() async {
     await NotificationService.initialize();
   } catch (_) {}
 
-  runApp(const TianRideApp());
+  runApp(const DarmaRideApp());
 }
 
-class TianRideApp extends StatelessWidget {
-  const TianRideApp({super.key});
+class DarmaRideApp extends StatelessWidget {
+  const DarmaRideApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TianRide',
+      title: 'Darma Ride',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.green,

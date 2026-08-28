@@ -3,8 +3,8 @@ import 'package:tianride/main.dart';
 
 void main() {
   testWidgets('TianRide app smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const TianRideApp());
+    await tester.pumpWidget(const DarmaRideApp());
 
-    expect(find.byType(TianRideApp), findsOneWidget);
+    expect(find.byType(DarmaRideApp), findsOneWidget);
   });
 }

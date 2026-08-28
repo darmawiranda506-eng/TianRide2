@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'services/fare_service.dart';
+import 'services/route_service.dart';
 
 class PassengerPage extends StatefulWidget {
   const PassengerPage({super.key});
@@ -28,8 +31,7 @@ class _PassengerPageState extends State<PassengerPage> {
       return null;
     }
 
-    LocationPermission permission =
-        await Geolocator.checkPermission();
+    var permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -47,6 +49,25 @@ class _PassengerPageState extends State<PassengerPage> {
       ),
     );
   }
+
+
+
+  String _formatRupiah(double value) {
+    final rounded = value.round();
+    final text = rounded.toString();
+    final buffer = StringBuffer();
+
+    for (var i = 0; i < text.length; i++) {
+      if (i > 0 && (text.length - i) % 3 == 0) {
+        buffer.write('.');
+      }
+      buffer.write(text[i]);
+    }
+
+    return 'Rp ${buffer.toString()}';
+  }
+
+
 
   Future<void> _buatPesanan() async {
     final tujuan = _destinationController.text.trim();
@@ -74,6 +95,52 @@ class _PassengerPageState extends State<PassengerPage> {
         return;
       }
 
+      // Ubah alamat/nama tujuan menjadi koordinat.
+      List<Location> locations;
+
+      try {
+        locations = await locationFromAddress(tujuan);
+      } catch (_) {
+        locations = [];
+      }
+
+      if (locations.isEmpty) {
+        setState(() => _loading = false);
+        _show(
+          'Tujuan tidak ditemukan. Coba masukkan alamat yang lebih lengkap.',
+        );
+        return;
+      }
+
+      final destination = locations.first;
+
+      // Hitung jarak jalan garis lurus sebagai dasar tarif.
+      // Nilai ini nantinya dapat dikembangkan menjadi jarak rute jalan.
+      // Hitung jarak berdasarkan rute jalan menggunakan OSRM.
+      // Jika rute gagal, gunakan jarak garis lurus sebagai cadangan.
+      double distanceKm;
+
+      final route = await RouteService.getRoute(
+        pickupLat: position.latitude,
+        pickupLng: position.longitude,
+        destinationLat: destination.latitude,
+        destinationLng: destination.longitude,
+      );
+
+      if (route != null) {
+        distanceKm = route.distanceKm;
+      } else {
+        final distanceMeters = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          destination.latitude,
+          destination.longitude,
+        );
+        distanceKm = distanceMeters / 1000.0;
+      }
+
+      final fare = FareService.calculateFare(distanceKm);
+
       final doc = await FirebaseFirestore.instance
           .collection('orders')
           .add({
@@ -81,8 +148,19 @@ class _PassengerPageState extends State<PassengerPage> {
         'driverId': null,
         'status': 'menunggu',
         'tujuan': tujuan,
+
         'pickupLat': position.latitude,
         'pickupLng': position.longitude,
+
+        'destinationLat': destination.latitude,
+        'destinationLng': destination.longitude,
+
+        'distanceKm': distanceKm,
+        'fare': fare,
+
+        'paymentMethod': 'tunai',
+        'paymentStatus': 'belum_dibayar',
+
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -91,7 +169,10 @@ class _PassengerPageState extends State<PassengerPage> {
         _loading = false;
       });
 
-      _show('Pesanan dibuat. Mencari driver...');
+      _show(
+        'Pesanan dibuat • ${distanceKm.toStringAsFixed(1)} km • '
+        '${FareService.formatRupiah(fare)}',
+      );
     } catch (e) {
       setState(() => _loading = false);
       _show('Gagal membuat pesanan: $e');
@@ -101,16 +182,22 @@ class _PassengerPageState extends State<PassengerPage> {
   Future<void> _batalkanPesanan() async {
     if (_orderId == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(_orderId)
-        .update({
-      'status': 'dibatalkan',
-      'cancelledAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(_orderId)
+          .update({
+        'status': 'dibatalkan',
+        'cancelledAt': FieldValue.serverTimestamp(),
+      });
 
-    setState(() => _orderId = null);
-    _show('Pesanan dibatalkan.');
+      if (!mounted) return;
+
+      setState(() => _orderId = null);
+      _show('Pesanan dibatalkan.');
+    } catch (e) {
+      _show('Gagal membatalkan pesanan: $e');
+    }
   }
 
   void _show(String text) {
@@ -129,6 +216,8 @@ class _PassengerPageState extends State<PassengerPage> {
         return 'Driver menerima pesanan';
       case 'menuju':
         return 'Driver menuju lokasi Anda';
+      case 'tiba':
+        return 'Driver sudah tiba';
       case 'perjalanan':
         return 'Perjalanan sedang berlangsung';
       case 'selesai':
@@ -144,7 +233,7 @@ class _PassengerPageState extends State<PassengerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('TianRide Penumpang'),
+        title: const Text('Darma Ride Penumpang'),
       ),
       body: _orderId == null
           ? _buildOrderForm()
@@ -205,6 +294,7 @@ class _PassengerPageState extends State<PassengerPage> {
           const SizedBox(height: 25),
           TextField(
             controller: _destinationController,
+            textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
               labelText: 'Tujuan',
               hintText: 'Contoh: Mall, pasar, kantor...',
@@ -227,7 +317,9 @@ class _PassengerPageState extends State<PassengerPage> {
                     )
                   : const Icon(Icons.local_taxi),
               label: Text(
-                _loading ? 'Mencari lokasi...' : 'PESAN OJEK',
+                _loading
+                    ? 'Menghitung tarif...'
+                    : 'PESAN OJEK',
               ),
             ),
           ),
@@ -235,9 +327,21 @@ class _PassengerPageState extends State<PassengerPage> {
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
-              child: Text(
-                'Lokasi penjemputan akan diambil dari GPS HP Anda.',
-                textAlign: TextAlign.center,
+              child: Column(
+                children: [
+                  Icon(Icons.gps_fixed),
+                  SizedBox(height: 8),
+                  Text(
+                    'Lokasi penjemputan diambil dari GPS HP Anda.',
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Tarif dasar sampai 4 km: Rp 9.300\n'
+                    'Tambahan di atas 4 km: Rp 2.300/km',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             ),
           ),
@@ -251,6 +355,8 @@ class _PassengerPageState extends State<PassengerPage> {
     String status,
   ) {
     final tujuan = data['tujuan']?.toString() ?? '-';
+    final distance = (data['distanceKm'] ?? 0).toDouble();
+    final fare = (data['fare'] ?? 0).toDouble();
 
     return Padding(
       padding: const EdgeInsets.all(20),
@@ -272,16 +378,43 @@ class _PassengerPageState extends State<PassengerPage> {
           ),
           const SizedBox(height: 20),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.place),
-              title: const Text('Tujuan'),
-              subtitle: Text(tujuan),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.place),
+                  title: const Text('Tujuan'),
+                  subtitle: Text(tujuan),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.route),
+                  title: const Text('Jarak'),
+                  subtitle: Text(
+                    '${distance.toStringAsFixed(1)} km',
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.payments),
+                  title: const Text('Tarif'),
+                  subtitle: Text(
+                    _formatRupiah(fare),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const ListTile(
+                  leading: Icon(Icons.money),
+                  title: Text('Pembayaran'),
+                  subtitle: Text('TUNAI'),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 15),
           if (status == 'menunggu')
             const LinearProgressIndicator(),
-          const Spacer(),
+          const SizedBox(height: 20),
           if (status == 'menunggu')
             SizedBox(
               width: double.infinity,
@@ -301,6 +434,9 @@ class _PassengerPageState extends State<PassengerPage> {
     Map<String, dynamic> data,
     String status,
   ) {
+    final distance = (data['distanceKm'] ?? 0).toDouble();
+    final fare = (data['fare'] ?? 0).toDouble();
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -319,11 +455,26 @@ class _PassengerPageState extends State<PassengerPage> {
             const SizedBox(height: 20),
             Text(
               _statusText(status),
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
             ),
+            if (status == 'selesai') ...[
+              const SizedBox(height: 20),
+              Text(
+                'Jarak: ${distance.toStringAsFixed(1)} km',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tarif: ${_formatRupiah(fare)}',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
             const SizedBox(height: 25),
             ElevatedButton(
               onPressed: () {
