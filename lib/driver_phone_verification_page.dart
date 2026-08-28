@@ -68,7 +68,8 @@ class _DriverPhoneVerificationPageState
         },
         verificationFailed: (FirebaseAuthException e) {
           _showMessage(
-            'Gagal mengirim kode OTP: ${e.message ?? e.code}',
+            'Gagal mengirim OTP [${e.code}]: '
+            '${e.message ?? 'Periksa Firebase Phone Authentication.'}',
           );
         },
         codeSent: (String verificationId, int? resendToken) {
