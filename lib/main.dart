@@ -1,7 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-import 'admin_page.dart';
+import 'admin_login_page.dart';
 import 'driver_login_page.dart';
 import 'passenger_page.dart';
 import 'services/notification_service.dart';
@@ -49,7 +49,7 @@ class DarmaRideApp extends StatelessWidget {
         return const DriverLoginPage();
 
       case 'admin':
-        return const AdminPage();
+        return const AdminLoginPage();
 
       case 'customer':
       default:

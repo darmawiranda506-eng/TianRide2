@@ -6,7 +6,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'driver_phone_verification_page.dart';
 
 class DriverRegisterPage extends StatefulWidget {
   const DriverRegisterPage({super.key});
@@ -20,6 +19,8 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _vehicleController = TextEditingController();
   final _plateController = TextEditingController();
 
@@ -166,36 +167,19 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
     }
 
     final phone = _normalizePhone(_phoneController.text);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
 
     setState(() => _loading = true);
 
     try {
-      final verified = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DriverPhoneVerificationPage(
-            phoneNumber: phone,
-          ),
-        ),
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email: email,
+        password: password,
       );
 
-      if (verified != true) {
-        if (mounted) {
-          _showMessage('Nomor HP belum diverifikasi.');
-        }
-        return;
-      }
-
-      final currentUser =
-          FirebaseAuth.instance.currentUser;
-
-      if (currentUser == null) {
-        throw Exception(
-          'Verifikasi nomor HP belum menghasilkan akun Firebase.',
-        );
-      }
-
-      final uid = currentUser.uid;
+      final uid = credential.user!.uid;
       final driverId = _generateDriverId();
 
       final selfieUrl = await _uploadFile(
@@ -228,6 +212,7 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
           .set({
         'uid': uid,
         'driverId': driverId,
+        'authEmail': email,
         'name': _nameController.text.trim(),
         'phone': phone,
         'vehicle': _vehicleController.text.trim(),
@@ -375,6 +360,44 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                       return 'Nomor HP tidak valid';
                     }
 
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 15),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'contoh@email.com',
+                    prefixIcon: Icon(Icons.email),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Email wajib diisi';
+                    }
+                    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                        .hasMatch(value.trim())) {
+                      return 'Email tidak valid';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 15),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    hintText: 'Minimal 6 karakter',
+                    prefixIcon: Icon(Icons.lock),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.length < 6) {
+                      return 'Password minimal 6 karakter';
+                    }
                     return null;
                   },
                 ),

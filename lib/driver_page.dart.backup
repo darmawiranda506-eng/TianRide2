@@ -36,9 +36,6 @@ class _DriverPageState extends State<DriverPage> {
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
-  DocumentReference<Map<String, dynamic>> get _driverDoc =>
-      FirebaseFirestore.instance.collection('drivers').doc(_uid);
-
   @override
   void dispose() {
     _locationSubscription?.cancel();
@@ -88,7 +85,7 @@ class _DriverPageState extends State<DriverPage> {
           ? 'Motor • Darma Ride'
           : _vehicleController.text.trim();
 
-      await _driverDoc.set({
+      await _orders.doc('_drivers_$_uid').set({
         'driverId': _uid,
         'driverName': _driverName,
         'vehicle': _vehicle,
@@ -110,7 +107,7 @@ class _DriverPageState extends State<DriverPage> {
       ).listen((position) async {
         if (!_online) return;
 
-        await _driverDoc.update({
+        await _orders.doc('_drivers_$_uid').update({
           'lat': position.latitude,
           'lng': position.longitude,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -131,7 +128,7 @@ class _DriverPageState extends State<DriverPage> {
     _locationSubscription = null;
 
     try {
-      await _driverDoc.update({
+      await _orders.doc('_drivers_$_uid').update({
         'online': false,
         'updatedAt': FieldValue.serverTimestamp(),
       });

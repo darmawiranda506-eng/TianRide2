@@ -2,10 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:geocoding/geocoding.dart';
 import 'services/fare_service.dart';
 import 'services/route_service.dart';
 
@@ -18,18 +15,9 @@ class PassengerPage extends StatefulWidget {
 
 class _PassengerPageState extends State<PassengerPage> {
   final _destinationController = TextEditingController();
-  final MapController _mapController = MapController();
 
   bool _loading = false;
-  bool _searchingLocation = false;
-
-  List<Map<String, dynamic>> _locationResults = [];
-
-  double? _selectedDestinationLat;
-  double? _selectedDestinationLng;
-
   String? _orderId;
-
 
   @override
   void dispose() {
@@ -64,95 +52,6 @@ class _PassengerPageState extends State<PassengerPage> {
 
 
 
-  Future<void> _searchLocation(String query) async {
-    final text = query.trim();
-
-    if (text.length < 3) {
-      if (mounted) {
-        setState(() {
-          _locationResults = [];
-        });
-      }
-      return;
-    }
-
-    setState(() => _searchingLocation = true);
-
-    try {
-      final uri = Uri.https(
-        'nominatim.openstreetmap.org',
-        '/search',
-        {
-          'q': text,
-          'format': 'jsonv2',
-          'limit': '5',
-          'countrycodes': 'id',
-          'accept-language': 'id',
-        },
-      );
-
-      final response = await http.get(
-        uri,
-        headers: {
-          'User-Agent': 'TianRide/1.0',
-        },
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Pencarian lokasi gagal.');
-      }
-
-      final List<dynamic> results = jsonDecode(response.body);
-
-      if (!mounted) return;
-
-      setState(() {
-        _locationResults = results
-            .map<Map<String, dynamic>>(
-              (item) => {
-                'display_name': item['display_name']?.toString() ?? '',
-                'lat': double.tryParse(item['lat']?.toString() ?? ''),
-                'lon': double.tryParse(item['lon']?.toString() ?? ''),
-              },
-            )
-            .where(
-              (item) =>
-                  item['display_name'].toString().isNotEmpty &&
-                  item['lat'] != null &&
-                  item['lon'] != null,
-            )
-            .toList();
-      });
-    } catch (e) {
-      if (mounted) {
-        _show('Gagal mencari lokasi. Coba lagi.');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _searchingLocation = false);
-      }
-    }
-  }
-
-  void _selectLocation(Map<String, dynamic> location) {
-    final lat = location['lat'] as double;
-    final lng = location['lon'] as double;
-    final name = location['display_name'].toString();
-
-    _destinationController.text = name;
-
-    setState(() {
-      _selectedDestinationLat = lat;
-      _selectedDestinationLng = lng;
-      _locationResults = [];
-    });
-
-    _mapController.move(
-      LatLng(lat, lng),
-      15,
-    );
-  }
-
   String _formatRupiah(double value) {
     final rounded = value.round();
     final text = rounded.toString();
@@ -178,21 +77,13 @@ class _PassengerPageState extends State<PassengerPage> {
       return;
     }
 
-    if (_selectedDestinationLat == null ||
-        _selectedDestinationLng == null) {
-      _show('Silakan pilih lokasi tujuan dari hasil pencarian.');
-      return;
-    }
-
     setState(() => _loading = true);
 
     try {
       final position = await _getLocation();
 
       if (position == null) {
-        if (mounted) {
-          setState(() => _loading = false);
-        }
+        setState(() => _loading = false);
         return;
       }
 
@@ -200,22 +91,40 @@ class _PassengerPageState extends State<PassengerPage> {
 
       if (user == null) {
         _show('Sesi Firebase belum tersedia.');
-        if (mounted) {
-          setState(() => _loading = false);
-        }
+        setState(() => _loading = false);
         return;
       }
 
-      final destinationLat = _selectedDestinationLat!;
-      final destinationLng = _selectedDestinationLng!;
+      // Ubah alamat/nama tujuan menjadi koordinat.
+      List<Location> locations;
 
+      try {
+        locations = await locationFromAddress(tujuan);
+      } catch (_) {
+        locations = [];
+      }
+
+      if (locations.isEmpty) {
+        setState(() => _loading = false);
+        _show(
+          'Tujuan tidak ditemukan. Coba masukkan alamat yang lebih lengkap.',
+        );
+        return;
+      }
+
+      final destination = locations.first;
+
+      // Hitung jarak jalan garis lurus sebagai dasar tarif.
+      // Nilai ini nantinya dapat dikembangkan menjadi jarak rute jalan.
+      // Hitung jarak berdasarkan rute jalan menggunakan OSRM.
+      // Jika rute gagal, gunakan jarak garis lurus sebagai cadangan.
       double distanceKm;
 
       final route = await RouteService.getRoute(
         pickupLat: position.latitude,
         pickupLng: position.longitude,
-        destinationLat: destinationLat,
-        destinationLng: destinationLng,
+        destinationLat: destination.latitude,
+        destinationLng: destination.longitude,
       );
 
       if (route != null) {
@@ -224,10 +133,9 @@ class _PassengerPageState extends State<PassengerPage> {
         final distanceMeters = Geolocator.distanceBetween(
           position.latitude,
           position.longitude,
-          destinationLat,
-          destinationLng,
+          destination.latitude,
+          destination.longitude,
         );
-
         distanceKm = distanceMeters / 1000.0;
       }
 
@@ -244,8 +152,8 @@ class _PassengerPageState extends State<PassengerPage> {
         'pickupLat': position.latitude,
         'pickupLng': position.longitude,
 
-        'destinationLat': destinationLat,
-        'destinationLng': destinationLng,
+        'destinationLat': destination.latitude,
+        'destinationLng': destination.longitude,
 
         'distanceKm': distanceKm,
         'fare': fare,
@@ -255,8 +163,6 @@ class _PassengerPageState extends State<PassengerPage> {
 
         'createdAt': FieldValue.serverTimestamp(),
       });
-
-      if (!mounted) return;
 
       setState(() {
         _orderId = doc.id;
@@ -268,10 +174,8 @@ class _PassengerPageState extends State<PassengerPage> {
         '${FareService.formatRupiah(fare)}',
       );
     } catch (e) {
-      if (mounted) {
-        setState(() => _loading = false);
-        _show('Gagal membuat pesanan: $e');
-      }
+      setState(() => _loading = false);
+      _show('Gagal membuat pesanan: $e');
     }
   }
 
@@ -284,29 +188,23 @@ class _PassengerPageState extends State<PassengerPage> {
           .doc(_orderId)
           .update({
         'status': 'dibatalkan',
-        'cancelledBy': 'passenger',
         'cancelledAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
 
-      setState(() {
-        _orderId = null;
-        _selectedDestinationLat = null;
-        _selectedDestinationLng = null;
-        _destinationController.clear();
-      });
-
-      _show('Pesanan berhasil dibatalkan.');
+      setState(() => _orderId = null);
+      _show('Pesanan dibatalkan.');
     } catch (e) {
       _show('Gagal membatalkan pesanan: $e');
     }
   }
 
-  void _show(String message) {
+  void _show(String text) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(content: Text(text)),
     );
   }
 
@@ -396,99 +294,14 @@ class _PassengerPageState extends State<PassengerPage> {
           const SizedBox(height: 25),
           TextField(
             controller: _destinationController,
-            textInputAction: TextInputAction.search,
-            onChanged: _searchLocation,
-            decoration: InputDecoration(
-              labelText: 'Cari tujuan',
-              hintText: 'Contoh: mall, pasar, kantor...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchingLocation
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : (_destinationController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _destinationController.clear();
-                            setState(() {
-                              _locationResults = [];
-                              _selectedDestinationLat = null;
-                              _selectedDestinationLng = null;
-                            });
-                          },
-                        )
-                      : null),
-              border: const OutlineInputBorder(),
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'Tujuan',
+              hintText: 'Contoh: Mall, pasar, kantor...',
+              prefixIcon: Icon(Icons.place),
+              border: OutlineInputBorder(),
             ),
           ),
-
-          if (_locationResults.isNotEmpty)
-            Card(
-              margin: const EdgeInsets.only(top: 5),
-              child: Column(
-                children: _locationResults.map((location) {
-                  return ListTile(
-                    leading: const Icon(Icons.location_on),
-                    title: Text(
-                      location['display_name'].toString(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => _selectLocation(location),
-                  );
-                }).toList(),
-              ),
-            ),
-
-          const SizedBox(height: 15),
-
-          SizedBox(
-            height: 250,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: const LatLng(-1.6101, 103.6131),
-                  initialZoom: 12,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.tianride',
-                  ),
-                  if (_selectedDestinationLat != null &&
-                      _selectedDestinationLng != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: LatLng(
-                            _selectedDestinationLat!,
-                            _selectedDestinationLng!,
-                          ),
-                          width: 50,
-                          height: 50,
-                          child: const Icon(
-                            Icons.location_on,
-                            size: 45,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
           const SizedBox(height: 20),
           SizedBox(
             height: 55,
@@ -534,145 +347,6 @@ class _PassengerPageState extends State<PassengerPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDriverTrackingMap(Map<String, dynamic> data) {
-    final driverId = data['driverId']?.toString();
-
-    if (driverId == null || driverId.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final pickupLat = (data['pickupLat'] as num?)?.toDouble();
-    final pickupLng = (data['pickupLng'] as num?)?.toDouble();
-    final destinationLat =
-        (data['destinationLat'] as num?)?.toDouble();
-    final destinationLng =
-        (data['destinationLng'] as num?)?.toDouble();
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(driverId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final driverData = snapshot.data?.data();
-
-        final driverLat =
-            (driverData?['lat'] as num?)?.toDouble();
-        final driverLng =
-            (driverData?['lng'] as num?)?.toDouble();
-
-        final points = <LatLng>[];
-
-        if (pickupLat != null && pickupLng != null) {
-          points.add(LatLng(pickupLat, pickupLng));
-        }
-
-        if (driverLat != null && driverLng != null) {
-          points.add(LatLng(driverLat, driverLng));
-        }
-
-        if (destinationLat != null && destinationLng != null) {
-          points.add(LatLng(destinationLat, destinationLng));
-        }
-
-        if (points.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 15),
-            const Text(
-              'Lokasi Perjalanan',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 280,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: points.first,
-                    initialZoom: 13,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.tianride',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        if (pickupLat != null && pickupLng != null)
-                          Marker(
-                            point: LatLng(pickupLat, pickupLng),
-                            width: 45,
-                            height: 45,
-                            child: const Icon(
-                              Icons.person_pin_circle,
-                              size: 40,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        if (driverLat != null && driverLng != null)
-                          Marker(
-                            point: LatLng(driverLat, driverLng),
-                            width: 50,
-                            height: 50,
-                            child: const Icon(
-                              Icons.motorcycle,
-                              size: 42,
-                              color: Colors.green,
-                            ),
-                          ),
-                        if (destinationLat != null && destinationLng != null)
-                          Marker(
-                            point: LatLng(
-                              destinationLat,
-                              destinationLng,
-                            ),
-                            width: 45,
-                            height: 45,
-                            child: const Icon(
-                              Icons.location_on,
-                              size: 42,
-                              color: Colors.red,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (driverLat != null && driverLng != null)
-              const Row(
-                children: [
-                  Icon(Icons.motorcycle, size: 20),
-                  SizedBox(width: 6),
-                  Text('Driver sedang dilacak secara realtime'),
-                ],
-              )
-            else
-              const Row(
-                children: [
-                  Icon(Icons.location_searching, size: 20),
-                  SizedBox(width: 6),
-                  Text('Menunggu lokasi driver...'),
-                ],
-              ),
-          ],
-        );
-      },
     );
   }
 
@@ -737,7 +411,6 @@ class _PassengerPageState extends State<PassengerPage> {
               ],
             ),
           ),
-          _buildDriverTrackingMap(data),
           const SizedBox(height: 15),
           if (status == 'menunggu')
             const LinearProgressIndicator(),

@@ -7,10 +7,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // =========================
+    // ORDERS
+    // =========================
     match /orders/{orderId} {
+
+      // Penumpang hanya boleh membuat order atas nama dirinya.
       allow create: if signedIn()
         && request.resource.data.passengerId == request.auth.uid;
 
+      // Penumpang melihat order sendiri.
+      // Driver melihat order yang ditugaskan kepadanya.
+      // Driver online dapat melihat order menunggu.
       allow read: if signedIn()
         && (
           resource.data.passengerId == request.auth.uid
@@ -21,22 +29,53 @@ service cloud.firestore {
           )
         );
 
+      // Penumpang dapat memperbarui order miliknya.
+      // Driver dapat memperbarui order yang ditugaskan kepadanya.
+      // Driver dapat mengambil order yang masih menunggu.
       allow update: if signedIn()
         && (
           resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
-            && request.resource.data.driverId == request.auth.uid
+            && resource.data.driverId == request.auth.uid
           )
         );
 
       allow delete: if false;
     }
 
+    // =========================
+    // DRIVER REALTIME LOCATION
+    // =========================
+    match /drivers/{driverId} {
+
+      // Driver hanya boleh membuat data dirinya sendiri.
+      allow create: if signedIn()
+        && request.auth.uid == driverId
+        && request.resource.data.driverId == driverId;
+
+      // Driver hanya boleh memperbarui data dirinya sendiri.
+      allow update: if signedIn()
+        && request.auth.uid == driverId
+        && request.resource.data.driverId == driverId;
+
+      // Jangan izinkan driver menghapus data lokasi.
+      allow delete: if false;
+
+      // Pembacaan lokasi driver ditangani berdasarkan
+      // hubungan driver dengan order di sisi aplikasi.
+      allow read: if signedIn();
+    }
+
+    // =========================
+    // USERS
+    // =========================
     match /users/{userId} {
+
       allow read, create, update: if signedIn()
         && request.auth.uid == userId;
+
       allow delete: if false;
     }
   }
