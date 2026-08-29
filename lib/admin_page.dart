@@ -10,7 +10,7 @@ class AdminPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -30,10 +30,17 @@ class AdminPage extends StatelessWidget {
             tabs: [
               Tab(icon: Icon(Icons.people), text: 'Driver'),
               Tab(icon: Icon(Icons.local_taxi), text: 'Order'),
+              Tab(icon: Icon(Icons.account_balance_wallet), text: 'Top Up'),
             ],
           ),
         ),
-        body: const TabBarView(children: [DriverList(), OrderList()]),
+        body: const TabBarView(
+          children: [
+            DriverList(),
+            OrderList(),
+            TopUpAdminList(),
+          ],
+        ),
       ),
     );
   }
@@ -268,5 +275,308 @@ class OrderList extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+
+class TopUpAdminList extends StatelessWidget {
+  const TopUpAdminList({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseFirestore.instance
+        .collection('topup_requests')
+        .orderBy('createdAt', descending: true)
+        .limit(50);
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ref.snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Gagal mengambil request Top Up:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const Center(
+            child: Text('Belum ada request Top Up.'),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(10),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data();
+
+            final amount =
+                (data['amount'] as num?)?.toDouble() ?? 0;
+
+            final status =
+                data['status']?.toString() ?? 'menunggu';
+
+            final driverName =
+                data['driverName']?.toString() ?? 'Driver';
+
+            final method =
+                data['method']?.toString() ?? '-';
+
+            return Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.account_balance_wallet),
+                ),
+                title: Text(driverName),
+                subtitle: Text(
+                  'Nominal: Rp ${amount.toStringAsFixed(0)}\n'
+                  'Metode: $method\n'
+                  'Status: $status',
+                ),
+                isThreeLine: true,
+                trailing: status == 'menunggu'
+                    ? const Icon(Icons.pending)
+                    : Icon(
+                        status == 'disetujui'
+                            ? Icons.verified
+                            : Icons.cancel,
+                      ),
+                onTap: () {
+                  _showTopUp(context, doc.id, data);
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showTopUp(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+  ) {
+    final amount =
+        (data['amount'] as num?)?.toDouble() ?? 0;
+
+    final proofUrl =
+        data['proofUrl']?.toString();
+
+    final status =
+        data['status']?.toString() ?? 'menunggu';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Request Top Up'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Driver: ${data['driverName'] ?? '-'}',
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Email: ${data['driverEmail'] ?? '-'}',
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Nominal: Rp ${amount.toStringAsFixed(0)}',
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Metode: ${data['method'] ?? '-'}',
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Status: $status',
+                ),
+                const SizedBox(height: 15),
+                if (proofUrl != null && proofUrl.isNotEmpty)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 220,
+                    child: Image.network(
+                      proofUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Text(
+                            'Bukti pembayaran tidak dapat ditampilkan.',
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            if (status == 'menunggu')
+              TextButton(
+                onPressed: () async {
+                  await FirebaseFirestore.instance
+                      .collection('topup_requests')
+                      .doc(requestId)
+                      .update({
+                    'status': 'ditolak',
+                    'reviewedAt':
+                        FieldValue.serverTimestamp(),
+                    'reviewedBy':
+                        FirebaseAuth.instance.currentUser?.uid,
+                  });
+
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                },
+                child: const Text('TOLAK'),
+              ),
+
+            if (status == 'menunggu')
+              FilledButton(
+                onPressed: () async {
+                  await _approveTopUp(
+                    context,
+                    requestId,
+                    data,
+                    amount,
+                  );
+
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                },
+                child: const Text('SETUJUI'),
+              ),
+
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext),
+              child: const Text('TUTUP'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _approveTopUp(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+    double amount,
+  ) async {
+    final driverId =
+        data['driverId']?.toString();
+
+    if (driverId == null || driverId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Driver ID tidak ditemukan.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final firestore =
+        FirebaseFirestore.instance;
+
+    final driverRef =
+        firestore.collection('drivers').doc(driverId);
+
+    final requestRef =
+        firestore.collection('topup_requests').doc(requestId);
+
+    try {
+      await firestore.runTransaction((transaction) async {
+        final requestSnapshot =
+            await transaction.get(requestRef);
+
+        final driverSnapshot =
+            await transaction.get(driverRef);
+
+        if (!requestSnapshot.exists) {
+          throw Exception('Request Top Up tidak ditemukan.');
+        }
+
+        final requestData =
+            requestSnapshot.data();
+
+        if (requestData?['status'] != 'menunggu') {
+          throw Exception(
+            'Request ini sudah diproses.',
+          );
+        }
+
+        if (!driverSnapshot.exists) {
+          throw Exception(
+            'Data driver tidak ditemukan.',
+          );
+        }
+
+        final driverData =
+            driverSnapshot.data() ?? {};
+
+        final oldBalance =
+            (driverData['balance'] as num?)?.toDouble() ?? 0;
+
+        final newBalance =
+            oldBalance + amount;
+
+        transaction.update(driverRef, {
+          'balance': newBalance,
+          'balanceUpdatedAt':
+              FieldValue.serverTimestamp(),
+        });
+
+        transaction.update(requestRef, {
+          'status': 'disetujui',
+          'approvedAmount': amount,
+          'approvedAt':
+              FieldValue.serverTimestamp(),
+          'approvedBy':
+              FirebaseAuth.instance.currentUser?.uid,
+        });
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Top Up disetujui. Saldo driver bertambah Rp ${amount.toStringAsFixed(0)}.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyetujui Top Up: $e'),
+          ),
+        );
+      }
+    }
   }
 }

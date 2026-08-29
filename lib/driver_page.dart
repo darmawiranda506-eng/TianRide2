@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'services/notification_service.dart';
+import 'topup_page.dart';
 
 class DriverPage extends StatefulWidget {
   const DriverPage({super.key});
@@ -895,36 +896,143 @@ class _DriverPageState extends State<DriverPage> {
   }
 
   Widget _driverProfile() {
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            const CircleAvatar(
-              radius: 32,
-              child: Icon(Icons.person, size: 35),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _driverDoc.snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() ?? {};
+
+        final balance =
+            (data['balance'] as num?)?.toDouble() ?? 0.0;
+
+        final balanceText = balance.round().toString();
+        final formatted = _formatRupiah(balanceText);
+
+        return Card(
+          margin: const EdgeInsets.all(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.greenAccent,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.account_balance_wallet,
+                        size: 34,
+                        color: Colors.greenAccent,
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'SALDO DRIVER',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        formatted,
+                        style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.greenAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Saldo virtual untuk komisi order',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TopUpPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add_card),
+                    label: const Text(
+                      'TOP UP SALDO',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                const CircleAvatar(
+                  radius: 32,
+                  child: Icon(
+                    Icons.person,
+                    size: 35,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nama driver',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: _vehicleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Kendaraan',
+                    prefixIcon: Icon(Icons.motorcycle),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama driver',
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _vehicleController,
-              decoration: const InputDecoration(
-                labelText: 'Kendaraan',
-                prefixIcon: Icon(Icons.motorcycle),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
+  }
+
+  String _formatRupiah(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (digits.isEmpty) {
+      return 'Rp 0';
+    }
+
+    final buffer = StringBuffer();
+
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) {
+        buffer.write('.');
+      }
+      buffer.write(digits[i]);
+    }
+
+    return 'Rp $buffer';
   }
 
   @override
