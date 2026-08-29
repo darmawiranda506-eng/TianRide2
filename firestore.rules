@@ -7,21 +7,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return signedIn()
+        && exists(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.role == 'admin';
+    }
+
     // =========================
     // ORDERS
     // =========================
     match /orders/{orderId} {
-
-      // Penumpang hanya boleh membuat order atas nama dirinya.
       allow create: if signedIn()
         && request.resource.data.passengerId == request.auth.uid;
 
-      // Penumpang melihat order sendiri.
-      // Driver melihat order yang ditugaskan kepadanya.
-      // Driver online dapat melihat order menunggu.
       allow read: if signedIn()
         && (
-          resource.data.passengerId == request.auth.uid
+          isAdmin()
+          || resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
@@ -29,16 +35,14 @@ service cloud.firestore {
           )
         );
 
-      // Penumpang dapat memperbarui order miliknya.
-      // Driver dapat memperbarui order yang ditugaskan kepadanya.
-      // Driver dapat mengambil order yang masih menunggu.
       allow update: if signedIn()
         && (
-          resource.data.passengerId == request.auth.uid
+          isAdmin()
+          || resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
-            && resource.data.driverId == request.auth.uid
+            && request.resource.data.driverId == request.auth.uid
           )
         );
 
@@ -49,14 +53,9 @@ service cloud.firestore {
     // PACKAGE ORDERS
     // =========================
     match /package_orders/{packageId} {
-
-      // Pengirim hanya boleh membuat paket atas nama dirinya.
       allow create: if signedIn()
         && request.resource.data.senderId == request.auth.uid;
 
-      // Pengirim dapat melihat paket miliknya.
-      // Driver yang sudah ditugaskan dapat melihat paket.
-      // Driver dapat melihat paket yang masih menunggu.
       allow read: if signedIn()
         && (
           resource.data.senderId == request.auth.uid
@@ -67,16 +66,13 @@ service cloud.firestore {
           )
         );
 
-      // Pengirim dapat memperbarui paket miliknya.
-      // Driver dapat memperbarui paket yang sudah ditugaskan.
-      // Driver dapat mengambil paket yang masih menunggu.
       allow update: if signedIn()
         && (
           resource.data.senderId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
-            && resource.data.driverId == request.auth.uid
+            && request.resource.data.driverId == request.auth.uid
           )
         );
 
@@ -84,40 +80,63 @@ service cloud.firestore {
     }
 
     // =========================
-    // DRIVER REALTIME LOCATION
+    // DRIVER
     // =========================
     match /drivers/{driverId} {
 
-      // Driver hanya boleh membuat data dirinya sendiri.
+      // Driver membuat dokumen dirinya sendiri.
       allow create: if signedIn()
         && request.auth.uid == driverId
-        && request.resource.data.driverId == driverId;
+        && request.resource.data.uid == request.auth.uid;
 
-      // Driver hanya boleh memperbarui data dirinya sendiri.
+      // Driver mengubah datanya sendiri.
+      // Admin boleh mengubah data driver, termasuk approval.
       allow update: if signedIn()
-        && request.auth.uid == driverId
-        && request.resource.data.driverId == driverId;
+        && (
+          request.auth.uid == driverId
+          || isAdmin()
+        );
 
-      // Jangan izinkan driver menghapus data lokasi.
+      allow read: if signedIn()
+        && (
+          request.auth.uid == driverId
+          || isAdmin()
+          || (
+            resource.data.online == true
+            && resource.data.verificationStatus == 'disetujui'
+          )
+        );
+
       allow delete: if false;
-
-      // Pembacaan lokasi driver ditangani berdasarkan
-      // hubungan driver dengan order di sisi aplikasi.
-      allow read: if signedIn();
     }
 
-
     // =========================
-    // TOP UP REQUESTS
+    // DRIVER LOOKUP
     // =========================
-    match /topup_requests/{requestId} {
+    match /driver_lookup/{driverId} {
 
-      allow create: if signedIn();
-
+      // Dipakai Driver Login untuk mencari email
+      // berdasarkan ID Driver.
       allow read: if signedIn();
 
-      allow update: if signedIn();
+      // Hanya Driver yang membuat mapping miliknya.
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.driverId == driverId;
 
+      // Admin boleh memperbaiki mapping.
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    // =========================
+    // TOP UP
+    // =========================
+    match /topup_requests/{requestId} {
+      allow create: if signedIn();
+      allow read: if signedIn();
+      allow update: if signedIn();
       allow delete: if false;
     }
 
@@ -125,27 +144,35 @@ service cloud.firestore {
     // USERS
     // =========================
     match /users/{userId} {
+      allow read: if signedIn()
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
 
-      allow read, create, update: if signedIn()
+      allow create: if signedIn()
         && request.auth.uid == userId;
+
+      allow update: if signedIn()
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
 
       allow delete: if false;
     }
 
     // =========================
-    // CHAT DRIVER <-> ADMIN
+    // CHAT
     // =========================
     match /chats/{driverId} {
-      // Driver hanya boleh membaca chat miliknya.
-      // Admin boleh membaca semua chat.
+
       allow read: if signedIn()
         && (
           request.auth.uid == driverId
-          || request.auth.token.admin == true
+          || isAdmin()
         );
 
-      // Driver hanya boleh membuat pesan sebagai dirinya.
-      // Admin boleh membuat pesan untuk driver.
       allow create: if signedIn()
         && (
           (
@@ -155,7 +182,7 @@ service cloud.firestore {
           )
           ||
           (
-            request.auth.token.admin == true
+            isAdmin()
             && request.resource.data.senderRole == 'admin'
           )
         );
@@ -163,16 +190,17 @@ service cloud.firestore {
       allow update: if signedIn()
         && (
           request.auth.uid == driverId
-          || request.auth.token.admin == true
+          || isAdmin()
         );
 
       allow delete: if false;
 
       match /messages/{messageId} {
+
         allow read: if signedIn()
           && (
             request.auth.uid == driverId
-            || request.auth.token.admin == true
+            || isAdmin()
           );
 
         allow create: if signedIn()
@@ -184,7 +212,7 @@ service cloud.firestore {
             )
             ||
             (
-              request.auth.token.admin == true
+              isAdmin()
               && request.resource.data.senderRole == 'admin'
             )
           );
@@ -192,7 +220,7 @@ service cloud.firestore {
         allow update: if signedIn()
           && (
             request.auth.uid == driverId
-            || request.auth.token.admin == true
+            || isAdmin()
           );
 
         allow delete: if false;

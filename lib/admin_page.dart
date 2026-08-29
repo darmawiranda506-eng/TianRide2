@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'chat_page.dart';
+import 'announcement_page.dart';
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
@@ -42,6 +43,8 @@ class AdminPage extends StatelessWidget {
             DriverList(),
             OrderList(),
             TopUpAdminList(),
+            AdminChatListPage(),
+            AnnouncementPage(admin: true),
           ],
         ),
       ),
@@ -306,7 +309,7 @@ class TopUpAdminList extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Text(
-                'Gagal mengambil request Top Up:\n${snapshot.error}',
+                'Gagal mengambil order:\n${snapshot.error}',
                 textAlign: TextAlign.center,
               ),
             ),

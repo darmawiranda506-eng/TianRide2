@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
 
 class DriverRegisterPage extends StatefulWidget {
   const DriverRegisterPage({super.key});
@@ -30,11 +30,14 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
   File? _stnk;
 
   bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     _vehicleController.dispose();
     _plateController.dispose();
     super.dispose();
@@ -127,7 +130,6 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
   String _generateDriverId() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final suffix = timestamp.toString();
-
     return 'DWS-${suffix.substring(suffix.length - 8)}';
   }
 
@@ -146,38 +148,84 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
       return;
     }
 
+    final name = _nameController.text.trim();
     final phone = _normalizePhone(_phoneController.text);
-    final email = _emailController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+    final vehicle = _vehicleController.text.trim();
+    final plate = _plateController.text.trim().toUpperCase();
 
     setState(() => _loading = true);
 
+    UserCredential? credential;
+
     try {
-      // Verifikasi dilakukan oleh Admin Darma Ride.
-      // Tidak membuat akun Firebase Auth saat pendaftaran.
-      final uid = FirebaseFirestore.instance
-          .collection('drivers')
-          .doc()
-          .id;
+      /*
+       * 1. BUAT AKUN FIREBASE AUTH
+       */
+      credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = credential.user;
+
+      if (user == null) {
+        throw Exception('Akun Firebase tidak berhasil dibuat.');
+      }
+
+      /*
+       * 2. BUAT ID DRIVER
+       */
       final driverId = _generateDriverId();
 
+      /*
+       * 3. SIMPAN DATA DRIVER MENGGUNAKAN UID AUTH
+       *
+       * Sangat penting:
+       * drivers/{UID Firebase Auth}
+       */
       await FirebaseFirestore.instance
           .collection('drivers')
-          .doc(uid)
+          .doc(user.uid)
           .set({
-        'uid': uid,
+        'uid': user.uid,
         'driverId': driverId,
         'authEmail': email,
-        'name': _nameController.text.trim(),
+        'name': name,
         'phone': phone,
-        'vehicle': _vehicleController.text.trim(),
-        'plateNumber':
-            _plateController.text.trim().toUpperCase(),
+        'vehicle': vehicle,
+        'plateNumber': plate,
         'verificationStatus': 'menunggu',
         'online': false,
         'rating': 5.0,
         'ratingCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      /*
+       * 4. SIMPAN MAPPING ID DRIVER → EMAIL
+       *
+       * Dipakai supaya Driver bisa login menggunakan
+       * ID Driver + Password.
+       */
+      await FirebaseFirestore.instance
+          .collection('driver_lookup')
+          .doc(driverId)
+          .set({
+        'driverId': driverId,
+        'email': email,
+        'uid': user.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      /*
+       * 5. DRIVER LANGSUNG SIGN OUT
+       *
+       * Karena status masih menunggu.
+       */
+      await FirebaseAuth.instance.signOut();
 
       if (!mounted) return;
 
@@ -189,7 +237,8 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
             content: Text(
               'ID Driver Anda:\n\n'
               '$driverId\n\n'
-              'Akun Anda sedang menunggu verifikasi Admin Darma Ride.',
+              'Akun berhasil dibuat dan sedang menunggu '
+              'verifikasi Admin Darma Ride.',
             ),
             actions: [
               TextButton(
@@ -204,6 +253,22 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
       if (mounted) {
         Navigator.pop(context);
       }
+    } on FirebaseAuthException catch (e) {
+      /*
+       * Kalau Auth berhasil tetapi penyimpanan Firestore gagal,
+       * akun Auth tetap ada. Jangan mencoba membuat akun kedua.
+       */
+      String message = 'Pendaftaran gagal.';
+
+      if (e.code == 'email-already-in-use') {
+        message = 'Email sudah terdaftar.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Format email tidak valid.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password terlalu lemah.';
+      }
+
+      _showMessage(message);
     } catch (e) {
       _showMessage('Pendaftaran gagal: $e');
     } finally {
@@ -235,9 +300,7 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
         ),
         title: Text(title),
         subtitle: Text(
-          file == null
-              ? 'Belum dipilih'
-              : 'Foto sudah dipilih',
+          file == null ? 'Belum dipilih' : 'Foto sudah dipilih',
         ),
         trailing: const Icon(Icons.camera_alt),
         onTap: () => _chooseImage(type),
@@ -274,6 +337,7 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                   ),
                 ),
                 const SizedBox(height: 25),
+
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(
@@ -288,7 +352,9 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 15),
+
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
@@ -313,7 +379,9 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 15),
+
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -327,22 +395,38 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                     if (value == null || value.trim().isEmpty) {
                       return 'Email wajib diisi';
                     }
+
                     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
                         .hasMatch(value.trim())) {
                       return 'Email tidak valid';
                     }
+
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 15),
+
                 TextFormField(
                   controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
                     labelText: 'Password',
                     hintText: 'Minimal 6 karakter',
-                    prefixIcon: Icon(Icons.lock),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.lock),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                    ),
                   ),
                   validator: (value) {
                     if (value == null || value.length < 6) {
@@ -351,103 +435,86 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 15),
+
                 TextFormField(
                   controller: _vehicleController,
                   decoration: const InputDecoration(
                     labelText: 'Jenis Kendaraan',
-                    hintText: 'Contoh: Honda Beat',
+                    hintText: 'Motor',
                     prefixIcon: Icon(Icons.two_wheeler),
                     border: OutlineInputBorder(),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Jenis kendaraan wajib diisi';
+                      return 'Kendaraan wajib diisi';
                     }
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 15),
+
                 TextFormField(
                   controller: _plateController,
-                  textCapitalization:
-                      TextCapitalization.characters,
+                  textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
-                    labelText: 'Nomor Polisi',
-                    hintText: 'Contoh: BM 1234 XX',
-                    prefixIcon: Icon(Icons.directions_car),
+                    labelText: 'Nomor Plat',
+                    hintText: 'BP 1234 XX',
+                    prefixIcon: Icon(Icons.confirmation_number),
                     border: OutlineInputBorder(),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Nomor polisi wajib diisi';
+                      return 'Nomor plat wajib diisi';
                     }
                     return null;
                   },
                 ),
-                const SizedBox(height: 25),
-                const Text(
-                  'Dokumen Driver',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Selfie digunakan sebagai foto profil. '
-                  'Tidak perlu memegang KTP saat selfie.',
-                ),
-                const SizedBox(height: 10),
+
+                const SizedBox(height: 20),
+
                 _documentButton(
-                  title: 'Selfie / Foto Profil',
+                  title: 'Selfie',
                   type: 'selfie',
                   file: _selfie,
-                  icon: Icons.face,
+                  icon: Icons.person,
                 ),
+
                 _documentButton(
                   title: 'KTP',
                   type: 'ktp',
                   file: _ktp,
                   icon: Icons.badge,
                 ),
+
                 _documentButton(
                   title: 'SIM',
                   type: 'sim',
                   file: _sim,
                   icon: Icons.credit_card,
                 ),
+
                 _documentButton(
                   title: 'STNK',
                   type: 'stnk',
                   file: _stnk,
                   icon: Icons.description,
                 ),
+
                 const SizedBox(height: 25),
+
                 SizedBox(
-                  height: 55,
-                  child: ElevatedButton.icon(
+                  height: 54,
+                  child: FilledButton.icon(
                     onPressed: _loading ? null : _register,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Icon(Icons.app_registration),
+                    icon: const Icon(Icons.app_registration),
                     label: Text(
-                      _loading ? 'MEMPROSES...' : 'DAFTAR DRIVER',
+                      _loading
+                          ? 'MENDAFTARKAN...'
+                          : 'DAFTAR DRIVER',
                     ),
-                  ),
-                ),
-                const SizedBox(height: 15),
-                const Text(
-                  'Nomor HP digunakan sebagai kontak driver. Pendaftaran akan diperiksa dan diverifikasi oleh Admin Darma Ride.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.greenAccent,
                   ),
                 ),
               ],
