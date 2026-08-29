@@ -494,8 +494,7 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
                 ),
                 const SizedBox(height: 15),
                 const Text(
-                  'Nomor HP akan diverifikasi melalui OTP SMS '
-                  'sebelum pendaftaran diproses.',
+                  'Nomor HP digunakan sebagai kontak driver. Pendaftaran akan diperiksa dan diverifikasi oleh Admin Darma Ride.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.greenAccent,
