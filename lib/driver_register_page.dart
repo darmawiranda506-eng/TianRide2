@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -132,24 +131,6 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
     return 'DWS-${suffix.substring(suffix.length - 8)}';
   }
 
-  Future<String> _uploadFile({
-    required File file,
-    required String uid,
-    required String name,
-  }) async {
-    final extension = file.path.split('.').last.toLowerCase();
-
-    final reference = FirebaseStorage.instance
-        .ref()
-        .child('driver_documents')
-        .child(uid)
-        .child('$name.$extension');
-
-    await reference.putFile(file);
-
-    return reference.getDownloadURL();
-  }
-
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -179,30 +160,6 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
           .id;
       final driverId = _generateDriverId();
 
-      final selfieUrl = await _uploadFile(
-        file: _selfie!,
-        uid: uid,
-        name: 'selfie',
-      );
-
-      final ktpUrl = await _uploadFile(
-        file: _ktp!,
-        uid: uid,
-        name: 'ktp',
-      );
-
-      final simUrl = await _uploadFile(
-        file: _sim!,
-        uid: uid,
-        name: 'sim',
-      );
-
-      final stnkUrl = await _uploadFile(
-        file: _stnk!,
-        uid: uid,
-        name: 'stnk',
-      );
-
       await FirebaseFirestore.instance
           .collection('drivers')
           .doc(uid)
@@ -215,10 +172,6 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
         'vehicle': _vehicleController.text.trim(),
         'plateNumber':
             _plateController.text.trim().toUpperCase(),
-        'selfieUrl': selfieUrl,
-        'ktpUrl': ktpUrl,
-        'simUrl': simUrl,
-        'stnkUrl': stnkUrl,
         'verificationStatus': 'menunggu',
         'online': false,
         'rating': 5.0,
