@@ -116,5 +116,72 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    // =========================
+    // CHAT DRIVER <-> ADMIN
+    // =========================
+    match /chats/{driverId} {
+      // Driver hanya boleh membaca chat miliknya.
+      // Admin boleh membaca semua chat.
+      allow read: if signedIn()
+        && (
+          request.auth.uid == driverId
+          || request.auth.token.admin == true
+        );
+
+      // Driver hanya boleh membuat pesan sebagai dirinya.
+      // Admin boleh membuat pesan untuk driver.
+      allow create: if signedIn()
+        && (
+          (
+            request.auth.uid == driverId
+            && request.resource.data.senderId == request.auth.uid
+            && request.resource.data.senderRole == 'driver'
+          )
+          ||
+          (
+            request.auth.token.admin == true
+            && request.resource.data.senderRole == 'admin'
+          )
+        );
+
+      allow update: if signedIn()
+        && (
+          request.auth.uid == driverId
+          || request.auth.token.admin == true
+        );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && (
+            request.auth.uid == driverId
+            || request.auth.token.admin == true
+          );
+
+        allow create: if signedIn()
+          && (
+            (
+              request.auth.uid == driverId
+              && request.resource.data.senderId == request.auth.uid
+              && request.resource.data.senderRole == 'driver'
+            )
+            ||
+            (
+              request.auth.token.admin == true
+              && request.resource.data.senderRole == 'admin'
+            )
+          );
+
+        allow update: if signedIn()
+          && (
+            request.auth.uid == driverId
+            || request.auth.token.admin == true
+          );
+
+        allow delete: if false;
+      }
+    }
   }
 }
