@@ -10,7 +10,7 @@ class AdminPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -31,6 +31,8 @@ class AdminPage extends StatelessWidget {
               Tab(icon: Icon(Icons.people), text: 'Driver'),
               Tab(icon: Icon(Icons.local_taxi), text: 'Order'),
               Tab(icon: Icon(Icons.account_balance_wallet), text: 'Top Up'),
+              Tab(icon: Icon(Icons.chat), text: 'Chat'),
+              Tab(icon: Icon(Icons.campaign), text: 'Info'),
             ],
           ),
         ),

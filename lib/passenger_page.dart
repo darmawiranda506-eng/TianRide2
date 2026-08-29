@@ -190,14 +190,19 @@ class _PassengerPageState extends State<PassengerPage> {
         return;
       }
 
-      final user = FirebaseAuth.instance.currentUser;
+      var user = FirebaseAuth.instance.currentUser;
 
       if (user == null) {
-        _show('Sesi Firebase belum tersedia.');
-        if (mounted) {
-          setState(() => _loading = false);
+        final credential = await FirebaseAuth.instance.signInAnonymously();
+        user = credential.user;
+
+        if (user == null) {
+          _show('Gagal membuat sesi penumpang.');
+          if (mounted) {
+            setState(() => _loading = false);
+          }
+          return;
         }
-        return;
       }
 
       final destinationLat = _selectedDestinationLat!;

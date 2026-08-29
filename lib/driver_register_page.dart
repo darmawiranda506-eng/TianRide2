@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -168,18 +167,16 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
 
     final phone = _normalizePhone(_phoneController.text);
     final email = _emailController.text.trim();
-    final password = _passwordController.text;
 
     setState(() => _loading = true);
 
     try {
-      final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final uid = credential.user!.uid;
+      // Verifikasi dilakukan oleh Admin Darma Ride.
+      // Tidak membuat akun Firebase Auth saat pendaftaran.
+      final uid = FirebaseFirestore.instance
+          .collection('drivers')
+          .doc()
+          .id;
       final driverId = _generateDriverId();
 
       final selfieUrl = await _uploadFile(
