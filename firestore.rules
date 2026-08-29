@@ -46,6 +46,44 @@ service cloud.firestore {
     }
 
     // =========================
+    // PACKAGE ORDERS
+    // =========================
+    match /package_orders/{packageId} {
+
+      // Pengirim hanya boleh membuat paket atas nama dirinya.
+      allow create: if signedIn()
+        && request.resource.data.senderId == request.auth.uid;
+
+      // Pengirim dapat melihat paket miliknya.
+      // Driver yang sudah ditugaskan dapat melihat paket.
+      // Driver dapat melihat paket yang masih menunggu.
+      allow read: if signedIn()
+        && (
+          resource.data.senderId == request.auth.uid
+          || resource.data.driverId == request.auth.uid
+          || (
+            resource.data.status == 'menunggu'
+            && resource.data.driverId == null
+          )
+        );
+
+      // Pengirim dapat memperbarui paket miliknya.
+      // Driver dapat memperbarui paket yang sudah ditugaskan.
+      // Driver dapat mengambil paket yang masih menunggu.
+      allow update: if signedIn()
+        && (
+          resource.data.senderId == request.auth.uid
+          || resource.data.driverId == request.auth.uid
+          || (
+            resource.data.status == 'menunggu'
+            && resource.data.driverId == request.auth.uid
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // =========================
     // DRIVER REALTIME LOCATION
     // =========================
     match /drivers/{driverId} {

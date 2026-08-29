@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:tianride/package_order_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -79,54 +80,47 @@ class _PassengerPageState extends State<PassengerPage> {
     setState(() => _searchingLocation = true);
 
     try {
+      final pos = await _getLocation();
+      if (pos == null) return;
+
+      const delta = 0.25;
+
       final uri = Uri.https(
         'nominatim.openstreetmap.org',
         '/search',
         {
           'q': text,
           'format': 'jsonv2',
-          'limit': '5',
-          'countrycodes': 'id',
+          'limit': '8',
+          'bounded': '1',
+          'viewbox':
+              '${pos.longitude-delta},${pos.latitude+delta},${pos.longitude+delta},${pos.latitude-delta}',
           'accept-language': 'id',
         },
       );
 
       final response = await http.get(
         uri,
-        headers: {
-          'User-Agent': 'TianRide/1.0',
-        },
+        headers: {'User-Agent': 'TianRide/1.0'},
       );
 
       if (response.statusCode != 200) {
-        throw Exception('Pencarian lokasi gagal.');
+        throw Exception('Pencarian gagal');
       }
 
-      final List<dynamic> results = jsonDecode(response.body);
+      final results = jsonDecode(response.body) as List;
 
       if (!mounted) return;
 
       setState(() {
-        _locationResults = results
-            .map<Map<String, dynamic>>(
-              (item) => {
-                'display_name': item['display_name']?.toString() ?? '',
-                'lat': double.tryParse(item['lat']?.toString() ?? ''),
-                'lon': double.tryParse(item['lon']?.toString() ?? ''),
-              },
-            )
-            .where(
-              (item) =>
-                  item['display_name'].toString().isNotEmpty &&
-                  item['lat'] != null &&
-                  item['lon'] != null,
-            )
-            .toList();
+        _locationResults = results.map<Map<String, dynamic>>((item) {
+          return {
+            'display_name': item['display_name'],
+            'lat': double.parse(item['lat']),
+            'lon': double.parse(item['lon']),
+          };
+        }).toList();
       });
-    } catch (e) {
-      if (mounted) {
-        _show('Gagal mencari lokasi. Coba lagi.');
-      }
     } finally {
       if (mounted) {
         setState(() => _searchingLocation = false);
@@ -394,6 +388,25 @@ class _PassengerPageState extends State<PassengerPage> {
             ),
           ),
           const SizedBox(height: 25),
+
+          SizedBox(
+            height: 55,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PackageOrderPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.inventory_2),
+              label: const Text('KIRIM PAKET'),
+            ),
+          ),
+
+          const SizedBox(height: 15),
+
           TextField(
             controller: _destinationController,
             textInputAction: TextInputAction.search,

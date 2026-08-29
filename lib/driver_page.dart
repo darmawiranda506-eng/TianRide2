@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'services/notification_service.dart';
@@ -22,6 +23,7 @@ class _DriverPageState extends State<DriverPage> {
   final Set<String> _notifiedOrderIds = <String>{};
 
   String? _activeOrderId;
+  String? _activePackageOrderId;
   String _driverName = 'Driver Darma Ride';
   String _vehicle = 'Motor • Darma Ride';
 
@@ -33,6 +35,9 @@ class _DriverPageState extends State<DriverPage> {
 
   final CollectionReference<Map<String, dynamic>> _orders =
       FirebaseFirestore.instance.collection('orders');
+
+  final CollectionReference<Map<String, dynamic>> _packageOrders =
+      FirebaseFirestore.instance.collection('package_orders');
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
@@ -169,6 +174,110 @@ class _DriverPageState extends State<DriverPage> {
     }
   }
 
+  Future<void> _acceptPackageOrder(
+    String orderId,
+    Map<String, dynamic> data,
+  ) async {
+    if (!_online ||
+        _activeOrderId != null ||
+        _activePackageOrderId != null) {
+      _message('Selesaikan pesanan aktif terlebih dahulu.');
+      return;
+    }
+
+    try {
+      await _packageOrders.doc(orderId).update({
+        'driverId': _uid,
+        'status': 'driver_menuju_pickup',
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        setState(() {
+          _activePackageOrderId = orderId;
+        });
+      }
+
+      _message('Paket diterima. Driver menuju lokasi pickup.');
+    } catch (e) {
+      _message('Gagal menerima paket: $e');
+    }
+  }
+
+  Future<void> _verifyPackagePickupOtp(
+    String orderId,
+    Map<String, dynamic> data,
+  ) async {
+    final controller = TextEditingController();
+
+    final otp = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('🔐 Verifikasi OTP Pickup'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Masukkan OTP dari pengirim',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('BATAL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.length == 6) {
+                Navigator.pop(context, value);
+              }
+            },
+            child: const Text('VERIFIKASI'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (otp == null || otp.isEmpty) return;
+
+    final correctOtp = data['pickupOtp']?.toString();
+
+    if (correctOtp == null || correctOtp.isEmpty) {
+      _message('OTP pickup belum tersedia.');
+      return;
+    }
+
+    if (otp != correctOtp) {
+      _message('❌ OTP salah. Paket belum dianggap diambil.');
+      return;
+    }
+
+    try {
+      await _packageOrders.doc(orderId).update({
+        'status': 'paket_diambil',
+        'pickupVerified': true,
+        'pickupVerifiedBy': _uid,
+        'pickupVerifiedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        _message('✅ OTP benar. Paket resmi telah diambil.');
+      }
+    } catch (e) {
+      _message('Gagal memverifikasi OTP: $e');
+    }
+  }
+
+  Future<void> _rejectPackageOrder(String orderId) async {
+    _message('Pesanan paket dilewati.');
+  }
+
   Future<void> _rejectOrder(String orderId) async {
     try {
       await _orders.doc(orderId).update({
@@ -253,6 +362,26 @@ class _DriverPageState extends State<DriverPage> {
     }
   }
 
+  Future<void> _navigateToPassenger(Map<String, dynamic> data) async {
+    final lat = (data['pickupLat'] as num?)?.toDouble();
+    final lng = (data['pickupLng'] as num?)?.toDouble();
+
+    if (lat == null || lng == null) {
+      _message('Lokasi penumpang belum tersedia.');
+      return;
+    }
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
+    );
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      _message('Google Maps tidak dapat dibuka.');
+    }
+  }
+
   void _message(String message) {
     if (!mounted) return;
 
@@ -274,6 +403,252 @@ class _DriverPageState extends State<DriverPage> {
         icon: Icon(icon),
         label: Text(label),
       ),
+    );
+  }
+
+  Widget _availablePackageOrders() {
+    if (!_online || _activeOrderId != null) {
+      return const SizedBox();
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _packageOrders
+          .where('status', isEqualTo: 'menunggu')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(20),
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Gagal mengambil paket: ${snapshot.error}',
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const SizedBox();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 20, 12, 8),
+              child: Text(
+                '📦 PESANAN PAKET',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.greenAccent,
+                ),
+              ),
+            ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: docs.length,
+              itemBuilder: (context, index) {
+                final doc = docs[index];
+                final data = doc.data();
+
+                final receiver =
+                    data['receiverName']?.toString() ?? 'Penerima';
+
+                final address =
+                    data['destinationAddress']?.toString() ?? '-';
+
+                final weight =
+                    (data['weightKg'] ?? 0).toDouble();
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '📦 PAKET BARU',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.greenAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        Text('Penerima: $receiver'),
+                        Text('Alamat: $address'),
+                        Text(
+                          'Berat: ${weight.toStringAsFixed(1)} kg',
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    _acceptPackageOrder(
+                                  doc.id,
+                                  data,
+                                ),
+                                icon: const Icon(
+                                  Icons.local_shipping,
+                                ),
+                                label: const Text(
+                                  'TERIMA PAKET',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    _rejectPackageOrder(doc.id),
+                                icon: const Icon(Icons.close),
+                                label: const Text('LEWATI'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _activePackageCard() {
+    if (_activePackageOrderId == null) {
+      return const SizedBox();
+    }
+
+    return StreamBuilder<
+        DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _packageOrders
+          .doc(_activePackageOrderId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(20),
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Gagal mengambil data paket: ${snapshot.error}',
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Padding(
+            padding: EdgeInsets.all(20),
+            child: Text('Data paket tidak ditemukan.'),
+          );
+        }
+
+        final data = snapshot.data!.data()!;
+        final status = data['status']?.toString() ?? '';
+
+        final receiver =
+            data['receiverName']?.toString() ?? 'Penerima';
+
+        final address =
+            data['destinationAddress']?.toString() ?? '-';
+
+        final weight =
+            (data['weightKg'] ?? 0).toDouble();
+
+        final pickupVerified =
+            data['pickupVerified'] == true;
+
+        return Card(
+          margin: const EdgeInsets.all(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '📦 PAKET AKTIF',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.greenAccent,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                Text('Penerima: $receiver'),
+                Text('Alamat: $address'),
+                Text(
+                  'Berat: ${weight.toStringAsFixed(1)} kg',
+                ),
+
+                const SizedBox(height: 16),
+
+                Text(
+                  pickupVerified
+                      ? '✅ Paket sudah diverifikasi dan diambil'
+                      : '🚚 Driver menuju lokasi pengambilan',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                if (!pickupVerified &&
+                    status == 'driver_menuju_pickup')
+                  ElevatedButton.icon(
+                    onPressed: () =>
+                        _verifyPackagePickupOtp(
+                      _activePackageOrderId!,
+                      data,
+                    ),
+                    icon: const Icon(Icons.lock_open),
+                    label: const Text(
+                      'VERIFIKASI OTP PICKUP',
+                    ),
+                  ),
+
+                if (pickupVerified)
+                  const Text(
+                    'Paket siap dibawa ke penerima.',
+                    textAlign: TextAlign.center,
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -320,12 +695,23 @@ class _DriverPageState extends State<DriverPage> {
                 const Text('Pembayaran: TUNAI'),
                 Text('Status: $status'),
                 const SizedBox(height: 14),
-                if (status == 'diterima')
+                if (status == 'diterima') ...[
                   _statusButton(
                     'menuju',
                     'MENUJU PENUMPANG',
                     Icons.navigation,
                   ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _navigateToPassenger(data),
+                      icon: const Icon(Icons.navigation),
+                      label: const Text('NAVIGASI KE PENUMPANG'),
+                    ),
+                  ),
+                ],
                 if (status == 'menuju')
                   _statusButton(
                     'tiba',
@@ -590,8 +976,10 @@ class _DriverPageState extends State<DriverPage> {
                 ),
               ),
             ),
+            _activePackageCard(),
             _activeOrderCard(),
             if (_activeOrderId == null) _availableOrders(),
+            if (_activeOrderId == null) _availablePackageOrders(),
           ],
         ),
       ),
