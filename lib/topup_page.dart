@@ -1,6 +1,6 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -78,18 +78,7 @@ class _TopUpPageState extends State<TopUpPage> {
       final requestRef =
           FirebaseFirestore.instance.collection('topup_requests').doc();
 
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('topup_proofs')
-          .child(user.uid)
-          .child('${requestRef.id}.jpg');
-
-      await storageRef.putData(
-        await _proof!.readAsBytes(),
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-
-      final proofUrl = await storageRef.getDownloadURL();
+      final proofBase64 = base64Encode(await _proof!.readAsBytes());
 
       final driverDoc = await FirebaseFirestore.instance
           .collection('drivers')
@@ -109,7 +98,7 @@ class _TopUpPageState extends State<TopUpPage> {
         'method': _method,
         'paymentNumber': paymentAccounts[_method]!['number'],
         'paymentName': paymentAccounts[_method]!['name'],
-        'proofUrl': proofUrl,
+        'proofBase64': proofBase64,
         'status': 'menunggu',
         'createdAt': FieldValue.serverTimestamp(),
       });

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -377,8 +378,7 @@ class TopUpAdminList extends StatelessWidget {
     final amount =
         (data['amount'] as num?)?.toDouble() ?? 0;
 
-    final proofUrl =
-        data['proofUrl']?.toString();
+    final proofBase64 = data['proofBase64']?.toString();
 
     final status =
         data['status']?.toString() ?? 'menunggu';
@@ -412,12 +412,12 @@ class TopUpAdminList extends StatelessWidget {
                   'Status: $status',
                 ),
                 const SizedBox(height: 15),
-                if (proofUrl != null && proofUrl.isNotEmpty)
+                if (proofBase64 != null && proofBase64.isNotEmpty)
                   SizedBox(
                     width: double.infinity,
                     height: 220,
-                    child: Image.network(
-                      proofUrl,
+                    child: Image.memory(base64Decode(
+                      proofBase64),
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
                         return const Center(
