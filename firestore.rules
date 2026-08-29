@@ -226,5 +226,22 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
+    // =========================
+    // ANNOUNCEMENTS / INFO
+    // =========================
+    match /announcements/{announcementId} {
+      // Semua user yang login boleh membaca pengumuman.
+      allow read: if signedIn();
+
+      // Hanya Admin yang boleh membuat pengumuman.
+      allow create: if isAdmin();
+
+      // Hanya Admin yang boleh mengubah pengumuman.
+      allow update: if isAdmin();
+
+      // Hanya Admin yang boleh menghapus pengumuman.
+      allow delete: if isAdmin();
+    }
+
   }
 }
