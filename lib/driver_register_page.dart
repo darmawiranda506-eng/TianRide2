@@ -204,27 +204,37 @@ class _DriverRegisterPageState extends State<DriverRegisterPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      /*
-       * 4. SIMPAN MAPPING ID DRIVER → EMAIL
-       *
-       * Dipakai supaya Driver bisa login menggunakan
-       * ID Driver + Password.
-       */
-      await FirebaseFirestore.instance
-          .collection('driver_lookup')
-          .doc(driverId)
-          .set({
-        'driverId': driverId,
-        'email': email,
-        'uid': user.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+        /*
+         * 4. SIMPAN USER ROLE DRIVER
+         */
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set({
+          'uid': user.uid,
+          'name': name,
+          'email': email,
+          'phone': phone,
+          'role': 'driver',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
 
-      /*
-       * 5. DRIVER LANGSUNG SIGN OUT
-       *
-       * Karena status masih menunggu.
-       */
+        /*
+         * 5. SIMPAN MAPPING ID DRIVER → EMAIL
+         */
+        await FirebaseFirestore.instance
+            .collection('driver_lookup')
+            .doc(driverId)
+            .set({
+          'driverId': driverId,
+          'email': email,
+          'uid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        /*
+         * 6. DRIVER LANGSUNG SIGN OUT
+         * Karena status masih menunggu.
+         */
       await FirebaseAuth.instance.signOut();
 
       if (!mounted) return;
