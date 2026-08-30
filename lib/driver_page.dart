@@ -487,14 +487,26 @@ class _DriverPageState extends State<DriverPage> {
       return;
     }
 
-    final uri = Uri.parse(
+    final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng(Penjemputan TianRide)');
+
+    final webUri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
     );
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      _message('Google Maps tidak dapat dibuka.');
+    try {
+      if (await canLaunchUrl(geoUri)) {
+        await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+
+      if (await canLaunchUrl(webUri)) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+
+      _message('Aplikasi navigasi tidak tersedia di HP ini.');
+    } catch (e) {
+      _message('Gagal membuka navigasi: $e');
     }
   }
 
