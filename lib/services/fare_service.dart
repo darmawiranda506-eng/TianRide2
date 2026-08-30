@@ -1,25 +1,74 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class FareConfig {
+  final double baseDistanceKm;
+  final double baseFare;
+  final double extraFarePerKm;
+
+  const FareConfig({
+    required this.baseDistanceKm,
+    required this.baseFare,
+    required this.extraFarePerKm,
+  });
+
+  factory FareConfig.fromMap(Map<String, dynamic> data) {
+    return FareConfig(
+      baseDistanceKm:
+          (data['baseDistanceKm'] ?? 4).toDouble(),
+      baseFare:
+          (data['baseFare'] ?? 8900).toDouble(),
+      extraFarePerKm:
+          (data['extraFarePerKm'] ?? 2300).toDouble(),
+    );
+  }
+
+  static const defaultConfig = FareConfig(
+    baseDistanceKm: 4,
+    baseFare: 8900,
+    extraFarePerKm: 2300,
+  );
+}
+
 class FareService {
-  static const double baseDistanceKm = 4.0;
-  static const double baseFare = 8900.0;
-  static const double extraFarePerKm = 2300.0;
+  static final FirebaseFirestore _firestore =
+      FirebaseFirestore.instance;
 
-  /// Tarif:
-  /// <= 4 km  = Rp8.900
-  /// > 4 km   = Rp8.900 + Rp2.300 setiap km tambahan
-  ///
-  /// Jarak tambahan dibulatkan ke atas agar driver tidak dirugikan.
-  static double calculateFare(double distanceKm) {
+  static Future<FareConfig> getConfig() async {
+    try {
+      final doc = await _firestore
+          .collection('settings')
+          .doc('fare')
+          .get();
+
+      if (!doc.exists || doc.data() == null) {
+        return FareConfig.defaultConfig;
+      }
+
+      return FareConfig.fromMap(doc.data()!);
+    } catch (_) {
+      // Jika internet/Firebase bermasalah,
+      // aplikasi tetap memakai tarif default.
+      return FareConfig.defaultConfig;
+    }
+  }
+
+  static double calculateFare(
+    double distanceKm,
+    FareConfig config,
+  ) {
     if (distanceKm <= 0) {
-      return baseFare;
+      return config.baseFare;
     }
 
-    if (distanceKm <= baseDistanceKm) {
-      return baseFare;
+    if (distanceKm <= config.baseDistanceKm) {
+      return config.baseFare;
     }
 
-    final extraKm = (distanceKm - baseDistanceKm).ceil();
+    final extraKm =
+        (distanceKm - config.baseDistanceKm).ceil();
 
-    return baseFare + (extraKm * extraFarePerKm);
+    return config.baseFare +
+        (extraKm * config.extraFarePerKm);
   }
 
   static String formatRupiah(double amount) {

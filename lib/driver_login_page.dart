@@ -13,6 +13,55 @@ class DriverLoginPage extends StatefulWidget {
 }
 
 class _DriverLoginPageState extends State<DriverLoginPage> {
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingLogin();
+  }
+
+  Future<void> _checkExistingLogin() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null || user.isAnonymous) {
+      return;
+    }
+
+    try {
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(user.uid)
+          .get();
+
+      if (!driverDoc.exists) {
+        await FirebaseAuth.instance.signOut();
+        return;
+      }
+
+      final data = driverDoc.data();
+
+      if (data == null) {
+        await FirebaseAuth.instance.signOut();
+        return;
+      }
+
+      final status =
+          data['verificationStatus']?.toString() ?? 'menunggu';
+
+      if (status == 'disetujui') {
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const DriverPage(),
+          ),
+        );
+      }
+    } catch (_) {
+      // Jika pemeriksaan gagal, tetap tampilkan halaman login.
+    }
+  }
+
   final _idController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -39,8 +88,11 @@ class _DriverLoginPageState extends State<DriverLoginPage> {
 
     try {
       /*
-       * Kita membutuhkan authentication sementara untuk
-       * membaca driver_lookup.
+       * Jika belum ada sesi Firebase, gunakan anonymous
+       * hanya sementara untuk membaca driver_lookup.
+       *
+       * Setelah itu sesi anonymous akan diganti dengan
+       * login email/password driver.
        */
       if (FirebaseAuth.instance.currentUser == null) {
         await FirebaseAuth.instance.signInAnonymously();

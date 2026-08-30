@@ -9,17 +9,25 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedIn()
-        && exists(
-          /databases/$(database)/documents/users/$(request.auth.uid)
-        )
-        && get(
-          /databases/$(database)/documents/users/$(request.auth.uid)
-        ).data.role == 'admin';
+        && request.auth.uid == "wy15nHSfqNSyrCLvei0Hdi05gEq2";
     }
 
     // =========================
     // ORDERS
     // =========================
+    // =========================
+    // FARE SETTINGS
+    // =========================
+    match /settings/fare {
+      // Customer dan driver boleh membaca tarif terbaru.
+      allow read: if signedIn();
+
+      // Hanya Admin yang boleh mengubah tarif.
+      allow create, update: if isAdmin();
+
+      allow delete: if false;
+    }
+
     match /orders/{orderId} {
       allow create: if signedIn()
         && request.resource.data.passengerId == request.auth.uid;

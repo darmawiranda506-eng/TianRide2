@@ -29,8 +29,18 @@ class _PassengerPageState extends State<PassengerPage> {
   double? _selectedDestinationLat;
   double? _selectedDestinationLng;
 
+  double? _pickupLat;
+  double? _pickupLng;
+  String _pickupAddress = 'Mengambil lokasi GPS...';
+
   String? _orderId;
 
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPickupLocation();
+  }
 
   @override
   void dispose() {
@@ -64,6 +74,25 @@ class _PassengerPageState extends State<PassengerPage> {
   }
 
 
+
+  Future<void> _loadPickupLocation() async {
+    final position = await _getLocation();
+    if (position == null || !mounted) return;
+
+    setState(() {
+      _pickupLat = position.latitude;
+      _pickupLng = position.longitude;
+      _pickupAddress =
+          'Lokasi GPS saat ini\n'
+          '${position.latitude.toStringAsFixed(6)}, '
+          '${position.longitude.toStringAsFixed(6)}';
+    });
+
+    _mapController.move(
+      LatLng(position.latitude, position.longitude),
+      14,
+    );
+  }
 
   Future<void> _searchLocation(String query) async {
     final text = query.trim();
@@ -230,7 +259,11 @@ class _PassengerPageState extends State<PassengerPage> {
         distanceKm = distanceMeters / 1000.0;
       }
 
-      final fare = FareService.calculateFare(distanceKm);
+      final fareConfig = await FareService.getConfig();
+    final fare = FareService.calculateFare(
+      distanceKm,
+      fareConfig,
+    );
 
       final doc = await FirebaseFirestore.instance
           .collection('orders')
@@ -412,7 +445,31 @@ class _PassengerPageState extends State<PassengerPage> {
 
           const SizedBox(height: 15),
 
-          TextField(
+          Card(
+          margin: const EdgeInsets.only(bottom: 15),
+          child: ListTile(
+            leading: const Icon(
+              Icons.my_location,
+              color: Colors.greenAccent,
+            ),
+            title: const Text(
+              'PENJEMPUTAN',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              _pickupAddress,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loading ? null : _loadPickupLocation,
+              tooltip: 'Perbarui lokasi',
+            ),
+          ),
+        ),
+
+        TextField(
             controller: _destinationController,
             textInputAction: TextInputAction.search,
             onChanged: _searchLocation,
@@ -482,25 +539,65 @@ class _PassengerPageState extends State<PassengerPage> {
                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.example.tianride',
                   ),
-                  if (_selectedDestinationLat != null &&
-                      _selectedDestinationLng != null)
-                    MarkerLayer(
-                      markers: [
+                  MarkerLayer(
+
+                    markers: [
+
+                      if (_pickupLat != null && _pickupLng != null)
+
                         Marker(
-                          point: LatLng(
-                            _selectedDestinationLat!,
-                            _selectedDestinationLng!,
-                          ),
+
+                          point: LatLng(_pickupLat!, _pickupLng!),
+
                           width: 50,
+
                           height: 50,
+
                           child: const Icon(
-                            Icons.location_on,
-                            size: 45,
-                            color: Colors.red,
+
+                            Icons.my_location,
+
+                            size: 42,
+
+                            color: Colors.green,
+
                           ),
+
                         ),
-                      ],
-                    ),
+
+                      if (_selectedDestinationLat != null &&
+
+                          _selectedDestinationLng != null)
+
+                        Marker(
+
+                          point: LatLng(
+
+                            _selectedDestinationLat!,
+
+                            _selectedDestinationLng!,
+
+                          ),
+
+                          width: 50,
+
+                          height: 50,
+
+                          child: const Icon(
+
+                            Icons.location_on,
+
+                            size: 45,
+
+                            color: Colors.red,
+
+                          ),
+
+                        ),
+
+                    ],
+
+                  ),
                 ],
               ),
             ),

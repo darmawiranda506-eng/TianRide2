@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:geolocator/geolocator.dart';
 import 'services/notification_service.dart';
+import 'services/driver_background_service.dart';
 import 'topup_page.dart';
 
 class DriverPage extends StatefulWidget {
@@ -46,6 +48,71 @@ class _DriverPageState extends State<DriverPage> {
       FirebaseFirestore.instance.collection('drivers').doc(_uid);
 
   @override
+  void initState() {
+    super.initState();
+    initializeDriverBackgroundService();
+    _restoreDriverState();
+  }
+
+  Future<void> _restoreDriverState() async {
+    try {
+      final doc = await _driverDoc.get();
+
+      if (!doc.exists) return;
+
+      final data = doc.data();
+      if (data == null || !mounted) return;
+
+      final online = data['online'] == true;
+      final driverName = data['driverName']?.toString();
+      final vehicle = data['vehicle']?.toString();
+
+      setState(() {
+        _online = online;
+        if (driverName != null && driverName.isNotEmpty) {
+          _driverName = driverName;
+        }
+        if (vehicle != null && vehicle.isNotEmpty) {
+          _vehicle = vehicle;
+        }
+      });
+
+      _nameController.text = _driverName;
+      _vehicleController.text = _vehicle;
+
+      if (online) {
+        _startLocationStream();
+        await _showDriverBubble();
+      }
+    } catch (e) {
+      debugPrint('Gagal restore status driver: $e');
+    }
+  }
+
+  void _startLocationStream() {
+    _locationSubscription?.cancel();
+
+    _locationSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((position) async {
+      if (!_online) return;
+
+      try {
+        await _driverDoc.update({
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('Gagal update lokasi driver: $e');
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _locationSubscription?.cancel();
     _nameController.dispose();
@@ -58,6 +125,41 @@ class _DriverPageState extends State<DriverPage> {
       await _goOnline();
     } else {
       await _goOffline();
+    }
+  }
+
+  Future<void> _showDriverBubble() async {
+    try {
+      final granted = await FlutterOverlayWindow.isPermissionGranted();
+
+      if (!granted) {
+        final result = await FlutterOverlayWindow.requestPermission();
+        if (result != true) {
+          _message('Izin bola mengambang belum diberikan.');
+          return;
+        }
+      }
+
+      await FlutterOverlayWindow.showOverlay(
+        enableDrag: true,
+        overlayTitle: 'TianRide Driver',
+        overlayContent: 'Driver ONLINE',
+        width: 90,
+        height: 90,
+        startPosition: const OverlayPosition(20, 180),
+      );
+
+      await FlutterOverlayWindow.resizeOverlay(90, 90, true);
+    } catch (e) {
+      debugPrint('Gagal menampilkan bubble: $e');
+    }
+  }
+
+  Future<void> _hideDriverBubble() async {
+    try {
+      await FlutterOverlayWindow.closeOverlay();
+    } catch (e) {
+      debugPrint('Gagal menutup bubble: $e');
     }
   }
 
@@ -102,9 +204,11 @@ class _DriverPageState extends State<DriverPage> {
         'lat': position.latitude,
         'lng': position.longitude,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
 
       setState(() => _online = true);
+      await startDriverBackgroundService(_uid);
+      await _showDriverBubble();
 
       _locationSubscription?.cancel();
 
@@ -133,6 +237,8 @@ class _DriverPageState extends State<DriverPage> {
   }
 
   Future<void> _goOffline() async {
+    await _hideDriverBubble();
+    await stopDriverBackgroundService();
     _locationSubscription?.cancel();
     _locationSubscription = null;
 

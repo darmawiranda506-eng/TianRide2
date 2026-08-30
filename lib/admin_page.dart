@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'chat_page.dart';
 import 'announcement_page.dart';
+import 'fare_admin_page.dart';
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
@@ -12,7 +13,7 @@ class AdminPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -33,6 +34,7 @@ class AdminPage extends StatelessWidget {
               Tab(icon: Icon(Icons.people), text: 'Driver'),
               Tab(icon: Icon(Icons.local_taxi), text: 'Order'),
               Tab(icon: Icon(Icons.account_balance_wallet), text: 'Top Up'),
+              Tab(icon: Icon(Icons.payments), text: 'Tarif'),
               Tab(icon: Icon(Icons.chat), text: 'Chat'),
               Tab(icon: Icon(Icons.campaign), text: 'Info'),
             ],
@@ -43,6 +45,7 @@ class AdminPage extends StatelessWidget {
             DriverList(),
             OrderList(),
             TopUpAdminList(),
+            FareAdminPage(),
             AdminChatListPage(),
             AnnouncementPage(admin: true),
           ],
