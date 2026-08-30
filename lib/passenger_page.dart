@@ -4,11 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:tianride/package_order_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import 'dart:convert';
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+
 import 'services/fare_service.dart';
 import 'services/route_service.dart';
+import 'services/order_assignment_service.dart';
 
 class PassengerPage extends StatefulWidget {
   const PassengerPage({super.key});
@@ -34,7 +38,6 @@ class _PassengerPageState extends State<PassengerPage> {
   String _pickupAddress = 'Mengambil lokasi GPS...';
 
   String? _orderId;
-
 
   @override
   void initState() {
@@ -67,13 +70,9 @@ class _PassengerPageState extends State<PassengerPage> {
     }
 
     return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
   }
-
-
 
   Future<void> _loadPickupLocation() async {
     final position = await _getLocation();
@@ -88,10 +87,7 @@ class _PassengerPageState extends State<PassengerPage> {
           '${position.longitude.toStringAsFixed(6)}';
     });
 
-    _mapController.move(
-      LatLng(position.latitude, position.longitude),
-      14,
-    );
+    _mapController.move(LatLng(position.latitude, position.longitude), 14);
   }
 
   Future<void> _searchLocation(String query) async {
@@ -114,19 +110,15 @@ class _PassengerPageState extends State<PassengerPage> {
 
       const delta = 0.25;
 
-      final uri = Uri.https(
-        'nominatim.openstreetmap.org',
-        '/search',
-        {
-          'q': text,
-          'format': 'jsonv2',
-          'limit': '8',
-          'bounded': '1',
-          'viewbox':
-              '${pos.longitude-delta},${pos.latitude+delta},${pos.longitude+delta},${pos.latitude-delta}',
-          'accept-language': 'id',
-        },
-      );
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': text,
+        'format': 'jsonv2',
+        'limit': '8',
+        'bounded': '1',
+        'viewbox':
+            '${pos.longitude - delta},${pos.latitude + delta},${pos.longitude + delta},${pos.latitude - delta}',
+        'accept-language': 'id',
+      });
 
       final response = await http.get(
         uri,
@@ -170,10 +162,7 @@ class _PassengerPageState extends State<PassengerPage> {
       _locationResults = [];
     });
 
-    _mapController.move(
-      LatLng(lat, lng),
-      15,
-    );
+    _mapController.move(LatLng(lat, lng), 15);
   }
 
   String _formatRupiah(double value) {
@@ -191,8 +180,6 @@ class _PassengerPageState extends State<PassengerPage> {
     return 'Rp ${buffer.toString()}';
   }
 
-
-
   Future<void> _buatPesanan() async {
     final tujuan = _destinationController.text.trim();
 
@@ -201,8 +188,7 @@ class _PassengerPageState extends State<PassengerPage> {
       return;
     }
 
-    if (_selectedDestinationLat == null ||
-        _selectedDestinationLng == null) {
+    if (_selectedDestinationLat == null || _selectedDestinationLng == null) {
       _show('Silakan pilih lokasi tujuan dari hasil pencarian.');
       return;
     }
@@ -260,14 +246,9 @@ class _PassengerPageState extends State<PassengerPage> {
       }
 
       final fareConfig = await FareService.getConfig();
-    final fare = FareService.calculateFare(
-      distanceKm,
-      fareConfig,
-    );
+      final fare = FareService.calculateFare(distanceKm, fareConfig);
 
-      final doc = await FirebaseFirestore.instance
-          .collection('orders')
-          .add({
+      final doc = await FirebaseFirestore.instance.collection('orders').add({
         'passengerId': user.uid,
         'driverId': null,
         'status': 'menunggu',
@@ -287,6 +268,14 @@ class _PassengerPageState extends State<PassengerPage> {
 
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      // Jalankan auto-assign dari aplikasi Customer.
+      // Tidak membutuhkan Cloud Functions / Blaze.
+      try {
+        await OrderAssignmentService.assignNearestDriver(doc.id);
+      } catch (e) {
+        debugPrint('Auto-assign order gagal: $e');
+      }
 
       if (!mounted) return;
 
@@ -315,10 +304,10 @@ class _PassengerPageState extends State<PassengerPage> {
           .collection('orders')
           .doc(_orderId)
           .update({
-        'status': 'dibatalkan',
-        'cancelledBy': 'passenger',
-        'cancelledAt': FieldValue.serverTimestamp(),
-      });
+            'status': 'dibatalkan',
+            'cancelledBy': 'passenger',
+            'cancelledAt': FieldValue.serverTimestamp(),
+          });
 
       if (!mounted) return;
 
@@ -337,9 +326,8 @@ class _PassengerPageState extends State<PassengerPage> {
 
   void _show(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _statusText(String status) {
@@ -366,9 +354,7 @@ class _PassengerPageState extends State<PassengerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Darma Ride Penumpang'),
-      ),
+      appBar: AppBar(title: const Text('Darma Ride Penumpang')),
       body: _orderId == null
           ? _buildOrderForm()
           : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -378,24 +364,18 @@ class _PassengerPageState extends State<PassengerPage> {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 final data = snapshot.data!.data();
 
                 if (data == null) {
-                  return const Center(
-                    child: Text('Pesanan tidak ditemukan.'),
-                  );
+                  return const Center(child: Text('Pesanan tidak ditemukan.'));
                 }
 
-                final status =
-                    data['status']?.toString() ?? 'menunggu';
+                final status = data['status']?.toString() ?? 'menunggu';
 
-                if (status == 'selesai' ||
-                    status == 'dibatalkan') {
+                if (status == 'selesai' || status == 'dibatalkan') {
                   return _buildFinished(data, status);
                 }
 
@@ -411,19 +391,12 @@ class _PassengerPageState extends State<PassengerPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(
-            Icons.location_on,
-            size: 80,
-            color: Colors.greenAccent,
-          ),
+          const Icon(Icons.location_on, size: 80, color: Colors.greenAccent),
           const SizedBox(height: 15),
           const Text(
             'Mau pergi ke mana?',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 25,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 25),
 
@@ -433,9 +406,7 @@ class _PassengerPageState extends State<PassengerPage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const PackageOrderPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const PackageOrderPage()),
                 );
               },
               icon: const Icon(Icons.inventory_2),
@@ -446,30 +417,27 @@ class _PassengerPageState extends State<PassengerPage> {
           const SizedBox(height: 15),
 
           Card(
-          margin: const EdgeInsets.only(bottom: 15),
-          child: ListTile(
-            leading: const Icon(
-              Icons.my_location,
-              color: Colors.greenAccent,
-            ),
-            title: const Text(
-              'PENJEMPUTAN',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(
-              _pickupAddress,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loading ? null : _loadPickupLocation,
-              tooltip: 'Perbarui lokasi',
+            margin: const EdgeInsets.only(bottom: 15),
+            child: ListTile(
+              leading: const Icon(Icons.my_location, color: Colors.greenAccent),
+              title: const Text(
+                'PENJEMPUTAN',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                _pickupAddress,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _loading ? null : _loadPickupLocation,
+                tooltip: 'Perbarui lokasi',
+              ),
             ),
           ),
-        ),
 
-        TextField(
+          TextField(
             controller: _destinationController,
             textInputAction: TextInputAction.search,
             onChanged: _searchLocation,
@@ -487,18 +455,18 @@ class _PassengerPageState extends State<PassengerPage> {
                       ),
                     )
                   : (_destinationController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _destinationController.clear();
-                            setState(() {
-                              _locationResults = [];
-                              _selectedDestinationLat = null;
-                              _selectedDestinationLng = null;
-                            });
-                          },
-                        )
-                      : null),
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _destinationController.clear();
+                              setState(() {
+                                _locationResults = [];
+                                _selectedDestinationLat = null;
+                                _selectedDestinationLng = null;
+                              });
+                            },
+                          )
+                        : null),
               border: const OutlineInputBorder(),
             ),
           ),
@@ -540,13 +508,9 @@ class _PassengerPageState extends State<PassengerPage> {
                     userAgentPackageName: 'com.example.tianride',
                   ),
                   MarkerLayer(
-
                     markers: [
-
                       if (_pickupLat != null && _pickupLng != null)
-
                         Marker(
-
                           point: LatLng(_pickupLat!, _pickupLng!),
 
                           width: 50,
@@ -554,29 +518,21 @@ class _PassengerPageState extends State<PassengerPage> {
                           height: 50,
 
                           child: const Icon(
-
                             Icons.my_location,
 
                             size: 42,
 
                             color: Colors.green,
-
                           ),
-
                         ),
 
                       if (_selectedDestinationLat != null &&
-
                           _selectedDestinationLng != null)
-
                         Marker(
-
                           point: LatLng(
-
                             _selectedDestinationLat!,
 
                             _selectedDestinationLng!,
-
                           ),
 
                           width: 50,
@@ -584,19 +540,14 @@ class _PassengerPageState extends State<PassengerPage> {
                           height: 50,
 
                           child: const Icon(
-
                             Icons.location_on,
 
                             size: 45,
 
                             color: Colors.red,
-
                           ),
-
                         ),
-
                     ],
-
                   ),
                 ],
               ),
@@ -613,16 +564,10 @@ class _PassengerPageState extends State<PassengerPage> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                      ),
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.local_taxi),
-              label: Text(
-                _loading
-                    ? 'Menghitung tarif...'
-                    : 'PESAN OJEK',
-              ),
+              label: Text(_loading ? 'Menghitung tarif...' : 'PESAN OJEK'),
             ),
           ),
           const SizedBox(height: 25),
@@ -661,10 +606,8 @@ class _PassengerPageState extends State<PassengerPage> {
 
     final pickupLat = (data['pickupLat'] as num?)?.toDouble();
     final pickupLng = (data['pickupLng'] as num?)?.toDouble();
-    final destinationLat =
-        (data['destinationLat'] as num?)?.toDouble();
-    final destinationLng =
-        (data['destinationLng'] as num?)?.toDouble();
+    final destinationLat = (data['destinationLat'] as num?)?.toDouble();
+    final destinationLng = (data['destinationLng'] as num?)?.toDouble();
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
@@ -674,10 +617,8 @@ class _PassengerPageState extends State<PassengerPage> {
       builder: (context, snapshot) {
         final driverData = snapshot.data?.data();
 
-        final driverLat =
-            (driverData?['lat'] as num?)?.toDouble();
-        final driverLng =
-            (driverData?['lng'] as num?)?.toDouble();
+        final driverLat = (driverData?['lat'] as num?)?.toDouble();
+        final driverLng = (driverData?['lng'] as num?)?.toDouble();
 
         final points = <LatLng>[];
 
@@ -703,10 +644,7 @@ class _PassengerPageState extends State<PassengerPage> {
             const SizedBox(height: 15),
             const Text(
               'Lokasi Perjalanan',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -750,10 +688,7 @@ class _PassengerPageState extends State<PassengerPage> {
                           ),
                         if (destinationLat != null && destinationLng != null)
                           Marker(
-                            point: LatLng(
-                              destinationLat,
-                              destinationLng,
-                            ),
+                            point: LatLng(destinationLat, destinationLng),
                             width: 45,
                             height: 45,
                             child: const Icon(
@@ -791,10 +726,7 @@ class _PassengerPageState extends State<PassengerPage> {
     );
   }
 
-  Widget _buildActiveOrder(
-    Map<String, dynamic> data,
-    String status,
-  ) {
+  Widget _buildActiveOrder(Map<String, dynamic> data, String status) {
     final tujuan = data['tujuan']?.toString() ?? '-';
     final distance = (data['distanceKm'] ?? 0).toDouble();
     final fare = (data['fare'] ?? 0).toDouble();
@@ -803,19 +735,12 @@ class _PassengerPageState extends State<PassengerPage> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          const Icon(
-            Icons.local_taxi,
-            size: 80,
-            color: Colors.greenAccent,
-          ),
+          const Icon(Icons.local_taxi, size: 80, color: Colors.greenAccent),
           const SizedBox(height: 20),
           Text(
             _statusText(status),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
           Card(
@@ -829,9 +754,7 @@ class _PassengerPageState extends State<PassengerPage> {
                 ListTile(
                   leading: const Icon(Icons.route),
                   title: const Text('Jarak'),
-                  subtitle: Text(
-                    '${distance.toStringAsFixed(1)} km',
-                  ),
+                  subtitle: Text('${distance.toStringAsFixed(1)} km'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.payments),
@@ -854,8 +777,7 @@ class _PassengerPageState extends State<PassengerPage> {
           ),
           _buildDriverTrackingMap(data),
           const SizedBox(height: 15),
-          if (status == 'menunggu')
-            const LinearProgressIndicator(),
+          if (status == 'menunggu') const LinearProgressIndicator(),
           const SizedBox(height: 20),
           if (status == 'menunggu')
             SizedBox(
@@ -872,10 +794,7 @@ class _PassengerPageState extends State<PassengerPage> {
     );
   }
 
-  Widget _buildFinished(
-    Map<String, dynamic> data,
-    String status,
-  ) {
+  Widget _buildFinished(Map<String, dynamic> data, String status) {
     final distance = (data['distanceKm'] ?? 0).toDouble();
     final fare = (data['fare'] ?? 0).toDouble();
 
@@ -886,9 +805,7 @@ class _PassengerPageState extends State<PassengerPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              status == 'selesai'
-                  ? Icons.check_circle
-                  : Icons.cancel,
+              status == 'selesai' ? Icons.check_circle : Icons.cancel,
               size: 90,
               color: status == 'selesai'
                   ? Colors.greenAccent
@@ -898,16 +815,11 @@ class _PassengerPageState extends State<PassengerPage> {
             Text(
               _statusText(status),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             if (status == 'selesai') ...[
               const SizedBox(height: 20),
-              Text(
-                'Jarak: ${distance.toStringAsFixed(1)} km',
-              ),
+              Text('Jarak: ${distance.toStringAsFixed(1)} km'),
               const SizedBox(height: 8),
               Text(
                 'Tarif: ${_formatRupiah(fare)}',

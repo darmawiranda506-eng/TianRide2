@@ -37,10 +37,6 @@ service cloud.firestore {
           isAdmin()
           || resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
-          || (
-            resource.data.status == 'menunggu'
-            && resource.data.driverId == null
-          )
         );
 
       allow update: if signedIn()
@@ -50,7 +46,13 @@ service cloud.firestore {
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
-            && request.resource.data.driverId == request.auth.uid
+            && request.resource.data.driverId != null
+            && get(
+              /databases/$(database)/documents/drivers/$(request.resource.data.driverId)
+            ).data.online == true
+            && get(
+              /databases/$(database)/documents/drivers/$(request.resource.data.driverId)
+            ).data.verificationStatus == 'disetujui'
           )
         );
 
@@ -66,17 +68,15 @@ service cloud.firestore {
 
       allow read: if signedIn()
         && (
-          resource.data.senderId == request.auth.uid
+          isAdmin()
+          || resource.data.senderId == request.auth.uid
           || resource.data.driverId == request.auth.uid
-          || (
-            resource.data.status == 'menunggu'
-            && resource.data.driverId == null
-          )
         );
 
       allow update: if signedIn()
         && (
-          resource.data.senderId == request.auth.uid
+          isAdmin()
+          || resource.data.senderId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || (
             resource.data.status == 'menunggu'
@@ -109,10 +109,7 @@ service cloud.firestore {
         && (
           request.auth.uid == driverId
           || isAdmin()
-          || (
-            resource.data.online == true
-            && resource.data.verificationStatus == 'disetujui'
-          )
+          || resource.data.online == true
         );
 
       allow delete: if false;

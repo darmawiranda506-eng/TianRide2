@@ -6,8 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:geolocator/geolocator.dart';
+
 import 'services/notification_service.dart';
 import 'services/driver_background_service.dart';
+import 'services/order_assignment_service.dart';
 import 'topup_page.dart';
 
 class DriverPage extends StatefulWidget {
@@ -30,14 +32,17 @@ class _DriverPageState extends State<DriverPage> {
   String _driverName = 'Driver Darma Ride';
   String _vehicle = 'Motor • Darma Ride';
 
-  final TextEditingController _nameController =
-      TextEditingController(text: 'Driver Darma Ride');
+  final TextEditingController _nameController = TextEditingController(
+    text: 'Driver Darma Ride',
+  );
 
-  final TextEditingController _vehicleController =
-      TextEditingController(text: 'Motor • Darma Ride');
+  final TextEditingController _vehicleController = TextEditingController(
+    text: 'Motor • Darma Ride',
+  );
 
-  final CollectionReference<Map<String, dynamic>> _orders =
-      FirebaseFirestore.instance.collection('orders');
+  final CollectionReference<Map<String, dynamic>> _orders = FirebaseFirestore
+      .instance
+      .collection('orders');
 
   final CollectionReference<Map<String, dynamic>> _packageOrders =
       FirebaseFirestore.instance.collection('package_orders');
@@ -92,24 +97,25 @@ class _DriverPageState extends State<DriverPage> {
   void _startLocationStream() {
     _locationSubscription?.cancel();
 
-    _locationSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((position) async {
-      if (!_online) return;
+    _locationSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((position) async {
+          if (!_online) return;
 
-      try {
-        await _driverDoc.update({
-          'lat': position.latitude,
-          'lng': position.longitude,
-          'updatedAt': FieldValue.serverTimestamp(),
+          try {
+            await _driverDoc.update({
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          } catch (e) {
+            debugPrint('Gagal update lokasi driver: $e');
+          }
         });
-      } catch (e) {
-        debugPrint('Gagal update lokasi driver: $e');
-      }
-    });
   }
 
   @override
@@ -212,20 +218,21 @@ class _DriverPageState extends State<DriverPage> {
 
       _locationSubscription?.cancel();
 
-      _locationSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
-        ),
-      ).listen((position) async {
-        if (!_online) return;
+      _locationSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+            ),
+          ).listen((position) async {
+            if (!_online) return;
 
-        await _driverDoc.update({
-          'lat': position.latitude,
-          'lng': position.longitude,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      });
+            await _driverDoc.update({
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          });
 
       _message('Driver ONLINE. Menunggu pesanan...');
     } catch (e) {
@@ -255,10 +262,7 @@ class _DriverPageState extends State<DriverPage> {
     }
   }
 
-  Future<void> _acceptOrder(
-    String orderId,
-    Map<String, dynamic> data,
-  ) async {
+  Future<void> _acceptOrder(String orderId, Map<String, dynamic> data) async {
     if (!_online) {
       _message('Aktifkan status ONLINE terlebih dahulu.');
       return;
@@ -285,9 +289,7 @@ class _DriverPageState extends State<DriverPage> {
     String orderId,
     Map<String, dynamic> data,
   ) async {
-    if (!_online ||
-        _activeOrderId != null ||
-        _activePackageOrderId != null) {
+    if (!_online || _activeOrderId != null || _activePackageOrderId != null) {
       _message('Selesaikan pesanan aktif terlebih dahulu.');
       return;
     }
@@ -388,10 +390,17 @@ class _DriverPageState extends State<DriverPage> {
   Future<void> _rejectOrder(String orderId) async {
     try {
       await _orders.doc(orderId).update({
+        'driverId': null,
+        'driverName': FieldValue.delete(),
+        'vehicle': FieldValue.delete(),
+        'assignedDistanceKm': FieldValue.delete(),
+        'assignedAt': FieldValue.delete(),
         'rejectedBy': FieldValue.arrayUnion([_uid]),
       });
 
-      _message('Pesanan dilewati.');
+      await OrderAssignmentService.assignNearestDriver(orderId);
+
+      _message('Pesanan dialihkan ke driver berikutnya.');
     } catch (e) {
       _message('Gagal melewati pesanan: $e');
     }
@@ -492,16 +501,11 @@ class _DriverPageState extends State<DriverPage> {
   void _message(String message) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Widget _statusButton(
-    String status,
-    String label,
-    IconData icon,
-  ) {
+  Widget _statusButton(String status, String label, IconData icon) {
     return SizedBox(
       width: double.infinity,
       height: 50,
@@ -519,10 +523,7 @@ class _DriverPageState extends State<DriverPage> {
     }
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _packageOrders
-          .where('status', isEqualTo: 'menunggu')
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: _packageOrders.where('driverId', isEqualTo: _uid).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -534,9 +535,7 @@ class _DriverPageState extends State<DriverPage> {
         if (snapshot.hasError) {
           return Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              'Gagal mengambil paket: ${snapshot.error}',
-            ),
+            child: Text('Gagal mengambil paket: ${snapshot.error}'),
           );
         }
 
@@ -568,14 +567,11 @@ class _DriverPageState extends State<DriverPage> {
                 final doc = docs[index];
                 final data = doc.data();
 
-                final receiver =
-                    data['receiverName']?.toString() ?? 'Penerima';
+                final receiver = data['receiverName']?.toString() ?? 'Penerima';
 
-                final address =
-                    data['destinationAddress']?.toString() ?? '-';
+                final address = data['destinationAddress']?.toString() ?? '-';
 
-                final weight =
-                    (data['weightKg'] ?? 0).toDouble();
+                final weight = (data['weightKg'] ?? 0).toDouble();
 
                 return Card(
                   margin: const EdgeInsets.symmetric(
@@ -585,8 +581,7 @@ class _DriverPageState extends State<DriverPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           '📦 PAKET BARU',
@@ -599,9 +594,7 @@ class _DriverPageState extends State<DriverPage> {
 
                         Text('Penerima: $receiver'),
                         Text('Alamat: $address'),
-                        Text(
-                          'Berat: ${weight.toStringAsFixed(1)} kg',
-                        ),
+                        Text('Berat: ${weight.toStringAsFixed(1)} kg'),
 
                         const SizedBox(height: 12),
 
@@ -610,23 +603,15 @@ class _DriverPageState extends State<DriverPage> {
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () =>
-                                    _acceptPackageOrder(
-                                  doc.id,
-                                  data,
-                                ),
-                                icon: const Icon(
-                                  Icons.local_shipping,
-                                ),
-                                label: const Text(
-                                  'TERIMA PAKET',
-                                ),
+                                    _acceptPackageOrder(doc.id, data),
+                                icon: const Icon(Icons.local_shipping),
+                                label: const Text('TERIMA PAKET'),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () =>
-                                    _rejectPackageOrder(doc.id),
+                                onPressed: () => _rejectPackageOrder(doc.id),
                                 icon: const Icon(Icons.close),
                                 label: const Text('LEWATI'),
                               ),
@@ -650,11 +635,8 @@ class _DriverPageState extends State<DriverPage> {
       return const SizedBox();
     }
 
-    return StreamBuilder<
-        DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _packageOrders
-          .doc(_activePackageOrderId)
-          .snapshots(),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _packageOrders.doc(_activePackageOrderId).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -666,9 +648,7 @@ class _DriverPageState extends State<DriverPage> {
         if (snapshot.hasError) {
           return Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              'Gagal mengambil data paket: ${snapshot.error}',
-            ),
+            child: Text('Gagal mengambil data paket: ${snapshot.error}'),
           );
         }
 
@@ -682,25 +662,20 @@ class _DriverPageState extends State<DriverPage> {
         final data = snapshot.data!.data()!;
         final status = data['status']?.toString() ?? '';
 
-        final receiver =
-            data['receiverName']?.toString() ?? 'Penerima';
+        final receiver = data['receiverName']?.toString() ?? 'Penerima';
 
-        final address =
-            data['destinationAddress']?.toString() ?? '-';
+        final address = data['destinationAddress']?.toString() ?? '-';
 
-        final weight =
-            (data['weightKg'] ?? 0).toDouble();
+        final weight = (data['weightKg'] ?? 0).toDouble();
 
-        final pickupVerified =
-            data['pickupVerified'] == true;
+        final pickupVerified = data['pickupVerified'] == true;
 
         return Card(
           margin: const EdgeInsets.all(12),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
                   '📦 PAKET AKTIF',
@@ -715,9 +690,7 @@ class _DriverPageState extends State<DriverPage> {
 
                 Text('Penerima: $receiver'),
                 Text('Alamat: $address'),
-                Text(
-                  'Berat: ${weight.toStringAsFixed(1)} kg',
-                ),
+                Text('Berat: ${weight.toStringAsFixed(1)} kg'),
 
                 const SizedBox(height: 16),
 
@@ -725,25 +698,17 @@ class _DriverPageState extends State<DriverPage> {
                   pickupVerified
                       ? '✅ Paket sudah diverifikasi dan diambil'
                       : '🚚 Driver menuju lokasi pengambilan',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
 
                 const SizedBox(height: 16),
 
-                if (!pickupVerified &&
-                    status == 'driver_menuju_pickup')
+                if (!pickupVerified && status == 'driver_menuju_pickup')
                   ElevatedButton.icon(
                     onPressed: () =>
-                        _verifyPackagePickupOtp(
-                      _activePackageOrderId!,
-                      data,
-                    ),
+                        _verifyPackagePickupOtp(_activePackageOrderId!, data),
                     icon: const Icon(Icons.lock_open),
-                    label: const Text(
-                      'VERIFIKASI OTP PICKUP',
-                    ),
+                    label: const Text('VERIFIKASI OTP PICKUP'),
                   ),
 
                 if (pickupVerified)
@@ -793,21 +758,13 @@ class _DriverPageState extends State<DriverPage> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Penumpang: ${data['passengerName'] ?? 'Penumpang'}',
-                ),
-                Text(
-                  'Tarif: Rp ${fare.toStringAsFixed(0)}',
-                ),
+                Text('Penumpang: ${data['passengerName'] ?? 'Penumpang'}'),
+                Text('Tarif: Rp ${fare.toStringAsFixed(0)}'),
                 const Text('Pembayaran: TUNAI'),
                 Text('Status: $status'),
                 const SizedBox(height: 14),
                 if (status == 'diterima') ...[
-                  _statusButton(
-                    'menuju',
-                    'MENUJU PENUMPANG',
-                    Icons.navigation,
-                  ),
+                  _statusButton('menuju', 'MENUJU PENUMPANG', Icons.navigation),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -820,11 +777,7 @@ class _DriverPageState extends State<DriverPage> {
                   ),
                 ],
                 if (status == 'menuju')
-                  _statusButton(
-                    'tiba',
-                    'SUDAH TIBA',
-                    Icons.place,
-                  ),
+                  _statusButton('tiba', 'SUDAH TIBA', Icons.place),
                 if (status == 'tiba')
                   _statusButton(
                     'perjalanan',
@@ -832,13 +785,8 @@ class _DriverPageState extends State<DriverPage> {
                     Icons.play_arrow,
                   ),
                 if (status == 'perjalanan')
-                  _statusButton(
-                    'selesai',
-                    'SELESAIKAN PERJALANAN',
-                    Icons.flag,
-                  ),
-                if (status == 'selesai' &&
-                    payment == 'menunggu_tunai')
+                  _statusButton('selesai', 'SELESAIKAN PERJALANAN', Icons.flag),
+                if (status == 'selesai' && payment == 'menunggu_tunai')
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -874,13 +822,9 @@ class _DriverPageState extends State<DriverPage> {
     }
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _orders
-          .where('status', isEqualTo: 'menunggu')
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: _orders.where('driverId', isEqualTo: _uid).snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-            ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
             padding: EdgeInsets.all(20),
             child: CircularProgressIndicator(),
@@ -890,9 +834,7 @@ class _DriverPageState extends State<DriverPage> {
         if (snapshot.hasError) {
           return Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              'Gagal mengambil pesanan: ${snapshot.error}',
-            ),
+            child: Text('Gagal mengambil pesanan: ${snapshot.error}'),
           );
         }
 
@@ -904,10 +846,8 @@ class _DriverPageState extends State<DriverPage> {
 
             _notifiedOrderIds.add(doc.id);
 
-            final distance =
-                (data['distanceKm'] ?? 0).toDouble();
-            final fare =
-                (data['fare'] ?? 0).toDouble();
+            final distance = (data['distanceKm'] ?? 0).toDouble();
+            final fare = (data['fare'] ?? 0).toDouble();
 
             NotificationService.showOrderNotification(
               title: 'ORDER BARU',
@@ -937,19 +877,14 @@ class _DriverPageState extends State<DriverPage> {
             final doc = docs[index];
             final data = doc.data();
             final fare = (data['fare'] ?? 0).toDouble();
-            final distance =
-                (data['distanceKm'] ?? 0).toDouble();
+            final distance = (data['distanceKm'] ?? 0).toDouble();
 
             return Card(
-              margin: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'ORDER BARU',
@@ -959,23 +894,16 @@ class _DriverPageState extends State<DriverPage> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'Penumpang: ${data['passengerName'] ?? 'Penumpang'}',
-                    ),
-                    Text(
-                      'Jarak: ${distance.toStringAsFixed(1)} km',
-                    ),
-                    Text(
-                      'Tarif: Rp ${fare.toStringAsFixed(0)}',
-                    ),
+                    Text('Penumpang: ${data['passengerName'] ?? 'Penumpang'}'),
+                    Text('Jarak: ${distance.toStringAsFixed(1)} km'),
+                    Text('Tarif: Rp ${fare.toStringAsFixed(0)}'),
                     const Text('Pembayaran: TUNAI'),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () =>
-                                _acceptOrder(doc.id, data),
+                            onPressed: () => _acceptOrder(doc.id, data),
                             icon: const Icon(Icons.check),
                             label: const Text('TERIMA'),
                           ),
@@ -983,8 +911,7 @@ class _DriverPageState extends State<DriverPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () =>
-                                _rejectOrder(doc.id),
+                            onPressed: () => _rejectOrder(doc.id),
                             icon: const Icon(Icons.close),
                             label: const Text('LEWATI'),
                           ),
@@ -1007,8 +934,7 @@ class _DriverPageState extends State<DriverPage> {
       builder: (context, snapshot) {
         final data = snapshot.data?.data() ?? {};
 
-        final balance =
-            (data['balance'] as num?)?.toDouble() ?? 0.0;
+        final balance = (data['balance'] as num?)?.toDouble() ?? 0.0;
 
         final balanceText = balance.round().toString();
         final formatted = _formatRupiah(balanceText);
@@ -1024,9 +950,7 @@ class _DriverPageState extends State<DriverPage> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.greenAccent,
-                    ),
+                    border: Border.all(color: Colors.greenAccent),
                   ),
                   child: Column(
                     children: [
@@ -1070,17 +994,13 @@ class _DriverPageState extends State<DriverPage> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const TopUpPage(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const TopUpPage()),
                       );
                     },
                     icon: const Icon(Icons.add_card),
                     label: const Text(
                       'TOP UP SALDO',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -1089,10 +1009,7 @@ class _DriverPageState extends State<DriverPage> {
 
                 const CircleAvatar(
                   radius: 32,
-                  child: Icon(
-                    Icons.person,
-                    size: 35,
-                  ),
+                  child: Icon(Icons.person, size: 35),
                 ),
 
                 const SizedBox(height: 10),
@@ -1149,17 +1066,13 @@ class _DriverPageState extends State<DriverPage> {
         actions: [
           IconButton(
             onPressed: _online ? _goOffline : () => _goOnline(),
-            icon: Icon(
-              _online ? Icons.power_settings_new : Icons.power,
-            ),
+            icon: Icon(_online ? Icons.power_settings_new : Icons.power),
           ),
           IconButton(
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const DriverHistoryPage(),
-                ),
+                MaterialPageRoute(builder: (_) => const DriverHistoryPage()),
               );
             },
             icon: const Icon(Icons.history),
@@ -1173,9 +1086,7 @@ class _DriverPageState extends State<DriverPage> {
             Card(
               margin: const EdgeInsets.all(12),
               child: SwitchListTile(
-                title: Text(
-                  _online ? 'DRIVER ONLINE' : 'DRIVER OFFLINE',
-                ),
+                title: Text(_online ? 'DRIVER ONLINE' : 'DRIVER OFFLINE'),
                 subtitle: Text(
                   _online
                       ? 'Menerima pesanan realtime'
@@ -1183,11 +1094,7 @@ class _DriverPageState extends State<DriverPage> {
                 ),
                 value: _online,
                 onChanged: _loading ? null : _toggleOnline,
-                secondary: Icon(
-                  _online
-                      ? Icons.wifi
-                      : Icons.wifi_off,
-                ),
+                secondary: Icon(_online ? Icons.wifi : Icons.wifi_off),
               ),
             ),
             _activePackageCard(),
@@ -1209,9 +1116,7 @@ class DriverHistoryPage extends StatelessWidget {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Riwayat Driver'),
-      ),
+      appBar: AppBar(title: const Text('Riwayat Driver')),
       body: uid == null
           ? const Center(child: Text('Belum login'))
           : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -1221,35 +1126,24 @@ class DriverHistoryPage extends StatelessWidget {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData ||
-                    snapshot.data!.docs.isEmpty) {
-                  return const Center(
-                    child: Text('Belum ada riwayat'),
-                  );
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('Belum ada riwayat'));
                 }
 
                 return ListView(
                   padding: const EdgeInsets.all(12),
                   children: snapshot.data!.docs.map((doc) {
                     final data = doc.data();
-                    final fare =
-                        (data['fare'] ?? 0).toDouble();
+                    final fare = (data['fare'] ?? 0).toDouble();
 
                     return Card(
                       child: ListTile(
-                        leading: const Icon(
-                          Icons.local_taxi,
-                        ),
-                        title: Text(
-                          'Rp ${fare.toStringAsFixed(0)}',
-                        ),
+                        leading: const Icon(Icons.local_taxi),
+                        title: Text('Rp ${fare.toStringAsFixed(0)}'),
                         subtitle: Text(
                           '${data['status'] ?? '-'} • '
                           '${data['paymentStatus'] ?? '-'}',
